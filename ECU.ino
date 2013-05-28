@@ -1,3 +1,7 @@
+#include <PID_v1.h>
+
+#define TOOTH_OFFSET 240
+
 const int missingTooth = 2;      // the pin that the pushbutton is attached to
 unsigned lastTooth = 0;          // Point in time that the last tooth occured
 unsigned toothTime = 0;          // The time between teeth
@@ -9,19 +13,23 @@ const int throttlePin = 0;       // the pin that the throttle position sensor is
 
 // Lambda
 const int lambdaPin = 1;         // the pin that the lambda sensor reading is on
-float lambda = 512;              // The value read from the lambda analog input pin 512 should be lambda = 1
+double lambda = 512;              // The value read from the lambda analog input pin 512 should be lambda = 1
 char lambdaDeadband = 20;        // The deadback for lambda feedback, don't adjust the output within this region from lambda = 512
-boolean lambdaFeedback = false;  // Whether to use lambda feedback or the engine map
+double lambdaSetpoint = 512;
+String fuelControl = "PID";  // Whether to use lambda feedback or the engine map
 
 // Fuel
 const int fuelPin = 12;          // the pin that the LED is attached to
 unsigned fuelTime = calcTime(1000,64);// The fuel pulse timing delay, default value at this timer's prescaler
-unsigned fuelDuration = calcTime(1000,64); // The fuel pulse duration, default value at this timer's prescaler
+double fuelDuration = calcTime(4000,64); // The fuel pulse duration, default value at this timer's prescaler
 
 // Ignition
 const int ignPin = 13;           // the pin that the ignition is attached to
 unsigned ignTime = calcTime(1000,8); // The ignition delay time @TODO modify to be crank angle based
 unsigned ignDuration = calcTime(1500,8); // The time that the ignition coil charges for
+
+// For PID
+PID lambdaPID(&lambda,&fuelDuration,&lambdaSetpoint,1,1,0.1,DIRECT);
 
 void setup() {
   // initialize the crank sensor as a input:
@@ -38,7 +46,11 @@ void setup() {
   // initialize serial communication:
   Serial.begin(115200);
   
-  attachInterrupt(0, missingToothISR, RISING);
+  attachInterrupt(0, missingToothISR, CHANGE);
+  
+  // PID
+  lambdaPID.SetMode(AUTOMATIC);
+  lambdaPID.SetOutputLimits(1, 65535);
   
    // initialize timer1 
   noInterrupts();           // disable all interrupts
@@ -68,16 +80,28 @@ void setup() {
 void loop() {
   //delay(5);
   
-  lambda = (float)0.9999*lambda + (float)analogRead(lambdaPin)*0.0001;
-  if(millis()%50 >45){
+  //lambda = (float)0.9*lambda + (float)analogRead(lambdaPin)*0.1; // low pass filter
+  lambda = analogRead(lambdaPin);  // no filter
+  //lambda = map(analogRead(lambdaPin),0,865,0,1023);    // Remap for max vals
+  if(fuelControl == "ONOFF" && millis()%50 >45){
     if(lambda > 512 + lambdaDeadband && fuelDuration < 65534){
        fuelDuration += 1; 
     }else if(lambda < 512 - lambdaDeadband && fuelDuration > 1){
        fuelDuration -= 1; 
     }
   }
+  
+  
+  // Use the map if lambda is turned off
+  if(fuelControl == "PID"){
+      // Look in the map to see if the data point is available
+      // If it is, then load it
+      // If it's not, then interpolate
+      lambdaPID.Compute();
+  }
+  
   if(millis()%500 >495){
-    RPM = 1000000/toothTime;
+    RPM = 500000/toothTime;
     Serial.print(RPM);
     Serial.print("\t");
     Serial.print(fuelDuration);
@@ -89,9 +113,12 @@ void loop() {
     Serial.print(ignTime);
     Serial.print("\t");
     Serial.print(lambda);
+    Serial.print("\t"); 
+    Serial.print(lambdaSetpoint);
     Serial.print("\t");
     Serial.println(analogRead(throttlePin)/10.23);
     if(millis()%5000 >4995){
+      Serial.println(fuelControl);
       Serial.print("RPM");
       Serial.print("\t");
       Serial.print("fuelDuration");
@@ -103,6 +130,8 @@ void loop() {
       Serial.print("ignTime");
       Serial.print("\t");
       Serial.print("lambda");
+      Serial.print("\t");
+      Serial.print("lambdaSetpoint");
       Serial.print("\t");
       Serial.println("throttle");
     }
@@ -125,12 +154,16 @@ void serialEvent() {
       ignTime = calcTime(Serial.parseInt(),8);
     break;
     case 'l':
-      if(Serial.peek() == 'd'){
+      char next = Serial.read();
+      if(next == 'd'){
         lambdaDeadband = Serial.parseInt();
-        lambdaFeedback = true;
+        fuelControl = "ONOFF";
+      }else if(next == 's'){
+        fuelControl = "PID";
+        lambdaSetpoint = Serial.parseInt();
       }else{
         // Turn lambda feedback off, and use the map instead
-        lambdaFeedback = false; 
+        fuelControl = "manual"; 
       }
     break;
   }
@@ -147,7 +180,7 @@ void missingToothISR(){
     TIFR1 |= 1 << OCF1A;        // Write a 1 to the interrupt flag to clear it
     TCNT1 = 0;                  // Reset the timer count to 0
     TIMSK1 |= (1 << OCIE1A);    // enable timer compare interrupt
-    OCR1A = fuelTime;            // Load the compare match register
+    OCR1A = fuelTime;           // Load the compare match register
     
     // Start the ignition delay timer
     TIFR3 |= 1 << OCF3A;        // Write a 1 to the interrupt flag to clear it
@@ -156,10 +189,10 @@ void missingToothISR(){
     OCR3A = ignTime;            // Load the compare match register
     
     crank_angle = 0;            // Reset the crank angle
-    temp = temp/3;              // This is how long a tooth would have taken and allows for correct calculation of engine RPM
+    temp = temp/6;              // This is how long a tooth would have taken and allows for correct calculation of engine RPM
+
   }else{
-    crank_angle+=3;    
-        //Serial.println(temp);
+    crank_angle+=3;
   }
 
    toothTime = temp; 
@@ -173,7 +206,7 @@ ISR(TIMER1_COMPA_vect)          // timer compare interrupt service routine
      digitalWrite(fuelPin,HIGH);
      TIFR1 |= 1 << OCF1A;        // Write a 1 to the interrupt flag to clear it
      TCNT1 = 0;                  // Reset the timer count to 0
-     OCR1A = fuelDuration;        // Load the compare match register with the coil charge time
+     OCR1A = (int)fuelDuration;        // Load the compare match register with the coil charge time
      
    }else{
      // If fuel was on, then turn it off
