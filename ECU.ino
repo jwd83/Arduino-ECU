@@ -1,37 +1,39 @@
-const int missingTooth = 2;     // the pin that the pushbutton is attached to
-unsigned lastTooth = 0;
-unsigned toothTime = 0;
-unsigned crank_angle;
-unsigned revTimer;
-unsigned RPM = 0;
+const int missingTooth = 2;      // the pin that the pushbutton is attached to
+unsigned lastTooth = 0;          // Point in time that the last tooth occured
+unsigned toothTime = 0;          // The time between teeth
+unsigned crank_angle;            // The current crank angle
+unsigned RPM = 0;                // The current engine RPM
+
+// Throttle
+const int throttlePin = 0;       // the pin that the throttle position sensor is on
 
 // Lambda
-float lambda = 512;
-char lambdaDeadband = 70;
+const int lambdaPin = 1;         // the pin that the lambda sensor reading is on
+float lambda = 512;              // The value read from the lambda analog input pin 512 should be lambda = 1
+char lambdaDeadband = 20;        // The deadback for lambda feedback, don't adjust the output within this region from lambda = 512
+boolean lambdaFeedback = false;  // Whether to use lambda feedback or the engine map
 
 // Fuel
-const int fuelPin = 12;         // the pin that the LED is attached to
-unsigned fuelTime = calcTime(1000,64);
-unsigned fuelDuration = calcTime(1000,64); 
+const int fuelPin = 12;          // the pin that the LED is attached to
+unsigned fuelTime = calcTime(1000,64);// The fuel pulse timing delay, default value at this timer's prescaler
+unsigned fuelDuration = calcTime(1000,64); // The fuel pulse duration, default value at this timer's prescaler
 
 // Ignition
-const int ignPin = 13;       // the pin that the ignition is attached to
-unsigned ignTime = calcTime(1000,8);
-unsigned ignDuration = calcTime(1000,8);
-
-// Others
-const int lambdaPin = 0;       // the pin that the ignition is attached to
+const int ignPin = 13;           // the pin that the ignition is attached to
+unsigned ignTime = calcTime(1000,8); // The ignition delay time @TODO modify to be crank angle based
+unsigned ignDuration = calcTime(1500,8); // The time that the ignition coil charges for
 
 void setup() {
-  // initialize the button pin as a input:
+  // initialize the crank sensor as a input:
   pinMode(missingTooth, INPUT);
-  // initialize the LED as an output:
+  // initialize the fuel as an output:
   pinMode(fuelPin, OUTPUT);
   
   // Turn the fuel off!
   digitalWrite(fuelPin,LOW);
   
   analogReference(EXTERNAL);
+  //pinMode(throttlePin, INPUT);
   
   // initialize serial communication:
   Serial.begin(115200);
@@ -66,25 +68,29 @@ void setup() {
 void loop() {
   //delay(5);
   
-  lambda = (float)0.999*lambda + (float)analogRead(lambdaPin)*0.001;
-  if(lambda > 512 + lambdaDeadband && fuelDuration < 65534){
-     fuelDuration += 1; 
-  }else if(lambda < 512 - lambdaDeadband && fuelDuration > 1){
-     fuelDuration -= 1; 
+  lambda = (float)0.9999*lambda + (float)analogRead(lambdaPin)*0.0001;
+  if(millis()%50 >45){
+    if(lambda > 512 + lambdaDeadband && fuelDuration < 65534){
+       fuelDuration += 1; 
+    }else if(lambda < 512 - lambdaDeadband && fuelDuration > 1){
+       fuelDuration -= 1; 
+    }
   }
   if(millis()%500 >495){
     RPM = 1000000/toothTime;
     Serial.print(RPM);
     Serial.print("\t");
     Serial.print(fuelDuration);
-    Serial.print("\t");
+    Serial.print("\t\t");
     Serial.print(fuelTime);
-    Serial.print("\t");
+    Serial.print("\t\t");
     Serial.print(ignDuration);
-    Serial.print("\t");
+    Serial.print("\t\t");
     Serial.print(ignTime);
     Serial.print("\t");
-    Serial.println(lambda);
+    Serial.print(lambda);
+    Serial.print("\t");
+    Serial.println(analogRead(throttlePin)/10.23);
     if(millis()%5000 >4995){
       Serial.print("RPM");
       Serial.print("\t");
@@ -94,7 +100,11 @@ void loop() {
       Serial.print("\t");
       Serial.print("ignDuration");
       Serial.print("\t");
-      Serial.println("ignTime");
+      Serial.print("ignTime");
+      Serial.print("\t");
+      Serial.print("lambda");
+      Serial.print("\t");
+      Serial.println("throttle");
     }
   }
 }
@@ -115,9 +125,14 @@ void serialEvent() {
       ignTime = calcTime(Serial.parseInt(),8);
     break;
     case 'l':
-      lambdaDeadband = Serial.parseInt();
+      if(Serial.peek() == 'd'){
+        lambdaDeadband = Serial.parseInt();
+        lambdaFeedback = true;
+      }else{
+        // Turn lambda feedback off, and use the map instead
+        lambdaFeedback = false; 
+      }
     break;
-    
   }
 }
 
