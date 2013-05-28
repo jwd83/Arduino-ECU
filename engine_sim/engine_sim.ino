@@ -63,7 +63,7 @@ void loop()
    delay(500);
    engine.simulate(0.01);
    
-   lambdaOut = 128*(engine.equiv);
+   lambdaOut = 128*(engine.lambda);
    
    if(lambdaOut > 255){
       lambdaOut = 255; 

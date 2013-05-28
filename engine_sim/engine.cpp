@@ -19,7 +19,7 @@ Engine::Engine(){
   s	= 0;			// Engine speed in RPM
   wdot  = 0;			// Angular acceleration (rads/s-2)
   AFR   = 14.7;                 // Calculated AFR
-  equiv = 1;                    // Calculated Equivalence ratio
+  lambda = 1;                    // Calculated Equivalence ratio
 }
 
 int Engine::test(int in)
@@ -39,7 +39,7 @@ void Engine::simulate(float dt){
   
   this->T = this->k1 * this->throttle;								// Torque from Combustion
   
-  float scale = -1.1536*pow(this->equiv,2) + 2.6954*this->equiv - 0.5695;                      // Scale torque for equivalence ratio (inferred from diagral 4.1 in Stone)
+  float scale = -1.1536*pow(this->lambda,2) + 2.6954*this->lambda - 0.5695;                      // Scale torque for equivalence ratio (inferred from diagral 4.1 in Stone)
   
   if(scale < 0.7){                                                                            // Can't produce negative torques!
      scale = 0.7; 
@@ -63,5 +63,5 @@ void Engine::simulate(float dt){
   this->w = this->w + this->wdot * dt;				// Engine speed = acceleration * timebase
   this->s = this->w * 60 / (2 * PI);				// Convert engine speed from rads/s to RPM
   this->AFR = (0.32666 * this->s * this->throttle)/(this->F);
-  this->equiv = this->AFR/14.7;
+  this->lambda = 14.7/this->AFR;
 }

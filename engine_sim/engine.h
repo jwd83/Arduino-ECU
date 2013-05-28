@@ -10,7 +10,7 @@ class Engine{
    float T;			// Torque (Nm)
    float F;			// Fuel pulse width
    float AFR;                   // Calculated AFR
-   float equiv;                 // Equivalence ratio
+   float lambda;                 // Equivalence ratio
    float throttle;              // Throttle position 0-100%
    Engine();
    int test(int in);
