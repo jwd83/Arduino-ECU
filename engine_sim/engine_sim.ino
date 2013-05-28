@@ -5,6 +5,7 @@
 #include "timer_blink.h"
 #include "Engine.h"
 
+#define THROTTLE_PIN A0
 #define FUEL_PIN PE_4
 #define IGN_PIN PE_5
 #define LAMBDA_PIN PB_4
@@ -15,6 +16,8 @@ long crankTimer;
 long fuelTimer;
 int fuelDuration;
 int fuelDelay;
+
+boolean analogThrottle = true;
 
 long ignTimer;
 int ignDelay;
@@ -57,7 +60,7 @@ void setup()
  
 void loop()
 {
-   delay(50);
+   delay(500);
    engine.simulate(0.01);
    
    lambdaOut = 128*(engine.equiv);
@@ -72,6 +75,9 @@ void loop()
    // Output the AFR on an analog pin to be read by ECU
    analogWrite(LAMBDA_PIN,lambdaOut);
    
+   if(analogThrottle == true){
+      engine.throttle = analogRead(THROTTLE_PIN)/40.95;
+   }
    
    Serial.print(engine.throttle);
    Serial.print("\t");
@@ -89,7 +95,12 @@ void serialEvent(){
   char temp = Serial.read();
   switch(temp){
     case 't':
-      engine.throttle = Serial.parseInt();
+      if(Serial.peek() != 'a'){
+        engine.throttle = Serial.parseInt();
+        analogThrottle = false;
+      }else{
+        analogThrottle = true;
+      }
     break;
     case 'l':
       engine.TL = Serial.parseInt();
