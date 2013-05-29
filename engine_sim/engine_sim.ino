@@ -5,6 +5,7 @@
 #include "timer_blink.h"
 #include "Engine.h"
 
+#define TOOTH_OFFSET 240
 #define THROTTLE_PIN A0
 #define FUEL_PIN PE_4
 #define IGN_PIN PE_5
@@ -16,6 +17,7 @@ long crankTimer;
 long fuelTimer;
 int fuelDuration;
 int fuelDelay;
+boolean toothFlag = false;
 
 boolean analogThrottle = true;
 
@@ -53,15 +55,16 @@ void setup()
   attachInterrupt(PUSH2, button2Push, CHANGE);
   
   attachInterrupt(FUEL_PIN, fuelChange, CHANGE);
-  attachInterrupt(IGN_PIN, fuelChange, CHANGE);
+  attachInterrupt(IGN_PIN, ignChange, FALLING);
   
-  engine.throttle = 100;
+  engine.throttle = 1;
+  setTimer(100);
 }
  
 void loop()
 {
    delay(500);
-   engine.simulate(0.01);
+   engine.simulate(0.5);
    
    lambdaOut = 128*(engine.lambda);
    
@@ -79,11 +82,14 @@ void loop()
       engine.throttle = analogRead(THROTTLE_PIN)/40.95;
    }
    
+   
    Serial.print(engine.throttle);
    Serial.print("\t");
    Serial.print(engine.s);
    Serial.print("\t");
    Serial.print(engine.AFR);
+   Serial.print("\t");
+   Serial.print(engine.ignition);
    Serial.print("\t");
    Serial.println(lambdaOut);
    
@@ -118,13 +124,15 @@ void fuelChange(){
   if(digitalRead(FUEL_PIN) == HIGH){
      fuelDelay = micros() - fuelTimer;
      fuelTimer = micros();
-     //Serial.println(fuelDelay);
   }else{
      fuelDuration = micros() - fuelTimer;
      fuelTimer = micros();
      engine.F = fuelDuration;
-     //Serial.println(fuelDuration);
   }
+}
+
+void ignChange(){
+  engine.ignition = TOOTH_OFFSET - crank_angle;
 }
 
 void button1Push(){
@@ -142,11 +150,14 @@ void button2Push(){
 
 extern "C" {
   void scott(){
+    
     if(crank_angle < 345){
       digitalWrite(RED_LED,0);
-      if(digitalRead(BLUE_LED)){
+      if(toothFlag){
+       toothFlag = false;
        digitalWrite(BLUE_LED,0);
       }else{
+        toothFlag = true;
        digitalWrite(BLUE_LED,1);  
       }
     }else{
@@ -154,7 +165,7 @@ extern "C" {
       digitalWrite(RED_LED,1);
     }
     crank_angle += 3;
-    if(crank_angle >= 360){
+    if(crank_angle == 360){
       crank_angle = 0;
     }
     

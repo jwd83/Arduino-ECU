@@ -12,6 +12,7 @@ class Engine{
    float AFR;                   // Calculated AFR
    float lambda;                 // Equivalence ratio
    float throttle;              // Throttle position 0-100%
+   int ignition;                // degrees before TDC that ignition occurred
    Engine();
    int test(int in);
    void simulate(float);

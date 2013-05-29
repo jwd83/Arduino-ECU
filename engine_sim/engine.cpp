@@ -8,6 +8,7 @@ Engine::Engine(){
   kf1 = 0.002;		// coefficient of friction
   kf2 = 0.0006;		// Squared coefficient of friction
   
+  
   // Working variables
   w	= 2;			// Angular speed in rads/s
   throttle = 0;                 // Throttle position: 0-100 %
@@ -20,6 +21,7 @@ Engine::Engine(){
   wdot  = 0;			// Angular acceleration (rads/s-2)
   AFR   = 14.7;                 // Calculated AFR
   lambda = 1;                    // Calculated Equivalence ratio
+  ignition = 0;
 }
 
 int Engine::test(int in)
@@ -37,14 +39,21 @@ void Engine::simulate(float dt){
     this->throttle = 0;
   }
   
-  this->T = this->k1 * this->throttle;								// Torque from Combustion
-  
-  float scale = -1.1536*pow(this->lambda,2) + 2.6954*this->lambda - 0.5695;                      // Scale torque for equivalence ratio (inferred from diagral 4.1 in Stone)
-  
-  if(scale < 0.7){                                                                            // Can't produce negative torques!
-     scale = 0.7; 
+  if(this->s > 0 && this->throttle > 0){ // Checks for floating point calcs
+    this->AFR = (0.32666 * this->s * this->throttle)/(this->F);
+    this->lambda = 14.7/this->AFR;
+  }else{
+    this->AFR = 0.0;
+    this->lambda = 0.0; 
   }
   
+  this->T = this->k1 * this->throttle;						// Torque from Combustion
+
+  float scale = -1.1536*pow(this->lambda,2) + 2.6954*this->lambda - 0.5695;     // Scale torque for equivalence ratio (inferred from diagral 4.1 in Stone)
+
+  if( scale < 0.7 ){      // Limit the scaling
+     scale = 0.7; 
+  }
   this->T = this->T * scale;
   
   this->TF = this->kf0*(this->w>0?1:0) + this->kf1*this->w + this->kf2 * pow(this->w, 2);	// Friction Torque
@@ -56,12 +65,12 @@ void Engine::simulate(float dt){
   
   if(this->s > 10000){
     // Overspeed!
-    this->TN = 0;
+    this->TN = this->TF;
   }
   
   this->wdot = this->TN / this->J;				// Angular acceleration = Torque/inertia
   this->w = this->w + this->wdot * dt;				// Engine speed = acceleration * timebase
-  this->s = this->w * 60 / (2 * PI);				// Convert engine speed from rads/s to RPM
-  this->AFR = (0.32666 * this->s * this->throttle)/(this->F);
-  this->lambda = 14.7/this->AFR;
+  this->s = this->w * 60 / (2 * PI);                            // Convert engine speed from rads/s to RPM
+  
+  
 }
