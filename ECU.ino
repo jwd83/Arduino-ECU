@@ -3,10 +3,11 @@
 #define TOOTH_OFFSET 240
 
 const int missingTooth = 2;      // the pin that the pushbutton is attached to
-unsigned lastTooth = 0;          // Point in time that the last tooth occured
-unsigned toothTime = 0;          // The time between teeth
+unsigned long lastTooth = 0;          // Point in time that the last tooth occured
+unsigned toothTime = 32000;          // The time between teeth
 unsigned crank_angle;            // The current crank angle
 unsigned RPM = 0;                // The current engine RPM
+long testTimer = 0;
 
 // Throttle
 const int throttlePin = 0;       // the pin that the throttle position sensor is on
@@ -25,8 +26,8 @@ double fuelDuration = calcTime(4000,64); // The fuel pulse duration, default val
 
 // Ignition
 const int ignPin = 13;           // the pin that the ignition is attached to
-unsigned ignTime = calcTime(1000,8); // The ignition delay time @TODO modify to be crank angle based
-unsigned ignDuration = calcTime(1500,8); // The time that the ignition coil charges for
+char ignAngle = 18; // The ignition delay time @TODO modify to be crank angle based
+unsigned ignDuration = calcTime(1500,64); // The time that the ignition coil charges for
 
 // For PID
 PID lambdaPID(&lambda,&fuelDuration,&lambdaSetpoint,1,1,0.1,DIRECT);
@@ -69,16 +70,19 @@ void setup() {
   TCCR3B = 0;               // Turn off noise cancelling, turn off edge select, waveform gen mode 0, no clock source
   TCNT3  = 0;               // Reset timer counter to 1
   
-  OCR3A = ignTime;  // Load the compare match register
+  //OCR3A = ignTime;  // Load the compare match register
   TCCR3B |= (1 << WGM32);   // CTC mode
   TCCR3B |= (1 << CS31);    // Load prescaler
+  TCCR3B |= (1 << CS30);    // Load prescaler
   //TIMSK3 |= (1 << OCIE3A);  // enable timer compare interrupt
   
   interrupts();             // enable all interrupts
 }
 
 void loop() {
-  //delay(5);
+  //delay(50);
+  
+  //lambda = temp2*temp2;
   
   //lambda = (float)0.9*lambda + (float)analogRead(lambdaPin)*0.1; // low pass filter
   lambda = analogRead(lambdaPin);  // no filter
@@ -100,6 +104,7 @@ void loop() {
       lambdaPID.Compute();
   }
   
+  
   if(millis()%500 >495){
     RPM = 500000/toothTime;
     Serial.print(RPM);
@@ -110,7 +115,7 @@ void loop() {
     Serial.print("\t\t");
     Serial.print(ignDuration);
     Serial.print("\t\t");
-    Serial.print(ignTime);
+    Serial.print(ignAngle);
     Serial.print("\t");
     Serial.print(lambda);
     Serial.print("\t"); 
@@ -136,6 +141,7 @@ void loop() {
       Serial.println("throttle");
     }
   }
+  
 }
 
 void serialEvent() {
@@ -148,10 +154,12 @@ void serialEvent() {
       fuelTime = calcTime(Serial.parseInt(),64);
     break;
     case 'i':
-      ignDuration = calcTime(Serial.parseInt(),8);
+    Serial.println(ignDuration);
+      ignDuration = calcTime(Serial.parseInt(),64);
+          Serial.println(ignDuration);
     break;
     case 't':
-      ignTime = calcTime(Serial.parseInt(),8);
+      ignAngle = Serial.parseInt();
     break;
     case 'l':
       char next = Serial.read();
@@ -170,10 +178,11 @@ void serialEvent() {
 }
 
 void missingToothISR(){
-  unsigned temp = micros() - lastTooth;
-  lastTooth = micros();
+  long time = micros();
+  long temp = time - lastTooth;
+  
 
-  if(temp > (2*toothTime) || crank_angle > 360){
+  if(temp > (5*toothTime) || crank_angle > 360){
     // Missing tooth detected
     
     // Sort out fuel timer
@@ -186,15 +195,34 @@ void missingToothISR(){
     TIFR3 |= 1 << OCF3A;        // Write a 1 to the interrupt flag to clear it
     TCNT3 = 0;                  // Reset the timer count to 0
     TIMSK3 |= (1 << OCIE3A);    // enable timer compare interrupt
-    OCR3A = ignTime;            // Load the compare match register
+    
+    //OCR3A = ignTime;            // Load the compare match register
+    
+    // Work out the timings for the fuel and ignition events based on the length of time the last tooth took
+    // 1 tooth is 3 degrees, so toothTime = 3 degrees worth of microseconds
+    // If the ignition pulse should finish 18 degrees before TDC then it has to start 18 degrees + duration of charge before TDC
+    // Convert 18 degrees into microseconds: (18/3)*toothTime
+    // Plus the time for charging: (18/3)*toothTime + ignDuration  = A
+    // Time after this missing tooth is TOOTH_OFFSET in microseconds minus A
+    // (TOOTH_OFFSET/3) * toothTime - ((18/3)*toothTime +ignDuration)
+    // (TOOTH_OFFSET/3) * toothTime -(18/3)*toothTime -ignDuration
+    // (TOOTH_OFFSET-18)*toothTime/3 - ignDuration
+    // This method requires careful prescaler choice since the timer is fully utilised at the RPM limits 64 seems to work ok
+    // The calculations also need to be cast to floats to avoid strange results
+    OCR3A = calcTime((float)(TOOTH_OFFSET - ignAngle)*toothTime/3.0 - (ignDuration << 2) ,64);            // Load the compare match register
+    //OCR3A = ignTime;            // Load the compare match register
+    
+    //Serial.print(time);Serial.print("\t");
+    //Serial.print(lastTooth);Serial.print("\t");
+    //Serial.println(temp);
     
     crank_angle = 0;            // Reset the crank angle
-    temp = temp/6;              // This is how long a tooth would have taken and allows for correct calculation of engine RPM
+    temp = temp/6.0;              // This is how long a tooth would have taken and allows for correct calculation of engine RPM
 
-  }else{
+  }else{    
     crank_angle+=3;
   }
-
+  lastTooth = time;
    toothTime = temp; 
 }
 
@@ -224,9 +252,12 @@ ISR(TIMER3_COMPA_vect)          // timer compare interrupt service routine
      digitalWrite(ignPin,HIGH);
      TIFR3 |= 1 << OCF3A;        // Write a 1 to the interrupt flag to clear it
      TCNT3 = 0;                  // Reset the timer count to 0
+     //Serial.println(ignDuration);
      OCR3A = ignDuration;        // Load the compare match register with the coil charge time
-     
+     testTimer = micros();
    }else{
+     //Serial.println(micros()- testTimer);
+     
      // If ignition on, turn it off and disable timer until next missing tooth
      digitalWrite(ignPin,LOW);
      TIMSK3 &= ~(1 << OCIE3A);  // disable timer compare interrupt 
@@ -239,7 +270,7 @@ void outputMarker(unsigned pin){
    digitalWrite(pin,LOW);
    delayMicroseconds(10);
    digitalWrite(pin,HIGH);
-   delayMicroseconds(500);
+   delayMicroseconds(100);
    digitalWrite(pin,LOW); 
    delayMicroseconds(10);
 }
@@ -248,5 +279,5 @@ void outputMarker(unsigned pin){
 //  Time is in nanoseconds.
 //  Returns the integer value to load into the timer counter register
 unsigned calcTime(unsigned long time, unsigned prescaler){
-  return (int)(time/((float)prescaler/16));
+  return (int)(time/(prescaler >> 4));
 }
