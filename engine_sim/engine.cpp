@@ -63,11 +63,6 @@ void Engine::simulate(float dt){
   this->TN = this->T - this->TF;				// Net torque = combustion torque - friction
   this->TN = this->TN - this->TL;				// Net torque minus the load
   
-  if(this->s > 10000){
-    // Overspeed!
-    this->TN = this->TF;
-  }
-  
   this->wdot = this->TN / this->J;				// Angular acceleration = Torque/inertia
   this->w = this->w + this->wdot * dt;				// Engine speed = acceleration * timebase
   this->s = this->w * 60 / (2 * PI);                            // Convert engine speed from rads/s to RPM
