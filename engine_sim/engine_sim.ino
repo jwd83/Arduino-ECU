@@ -18,6 +18,7 @@ long fuelTimer;
 int fuelDuration;
 int fuelDelay;
 boolean toothFlag = false;
+boolean fired = false;
 
 boolean analogThrottle = true;
 
@@ -51,20 +52,21 @@ void setup()
   Serial.println("Init");
   Serial.println(RPM);
   
-  attachInterrupt(PUSH1, button1Push, CHANGE); // Button 1 is broken...
-  attachInterrupt(PUSH2, button2Push, CHANGE);
+  //attachInterrupt(PUSH1, button1Push, CHANGE); // Button 1 is broken...
+  //attachInterrupt(PUSH2, button2Push, CHANGE);
   
   attachInterrupt(FUEL_PIN, fuelChange, CHANGE);
   attachInterrupt(IGN_PIN, ignChange, FALLING);
   
   engine.throttle = 1;
-  setTimer(100);
+  setTimer(2896);
 }
  
 void loop()
 {
-   delay(500);
-   engine.simulate(0.5);
+
+   delay(50);
+   engine.simulate(0.05);
    
    lambdaOut = 128*(engine.lambda);
    
@@ -115,12 +117,14 @@ void serialEvent(){
       analogWrite(LAMBDA_PIN,Serial.parseInt());
     break;
   }
+  // Clear out anything left in the serial buffer (ignore it)
   while(Serial.available()){
    Serial.read(); 
   }
 }
 
 void fuelChange(){
+  //setTimer((int)engine.s);
   if(digitalRead(FUEL_PIN) == HIGH){
      fuelDelay = micros() - fuelTimer;
      fuelTimer = micros();
@@ -133,6 +137,7 @@ void fuelChange(){
 
 void ignChange(){
   engine.ignition = TOOTH_OFFSET - crank_angle;
+  fired = true;
 }
 
 void button1Push(){
@@ -167,6 +172,10 @@ extern "C" {
     crank_angle += 3;
     if(crank_angle == 360){
       crank_angle = 0;
+      if(fired == false){
+        Serial.println("Missfire!");
+      };
+      fired = false;
     }
     
   }
