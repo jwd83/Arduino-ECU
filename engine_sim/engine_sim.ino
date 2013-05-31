@@ -7,8 +7,10 @@
 
 #define TOOTH_OFFSET 240
 #define THROTTLE_PIN A0
-#define FUEL_PIN PE_4
-#define IGN_PIN PE_5
+#define TOOTH_PIN PD_0
+#define IGN_PIN PD_1
+#define FUEL_PIN PD_2
+
 #define LAMBDA_PIN PB_4
 
 int crank_angle;
@@ -31,7 +33,7 @@ Engine engine;
  
 void setup()
 {    
-  pinMode(BLUE_LED,OUTPUT);
+  pinMode(TOOTH_PIN,OUTPUT);
   pinMode(RED_LED,OUTPUT);
   pinMode(PUSH2,INPUT);
   pinMode(PUSH1,INPUT);
@@ -160,13 +162,13 @@ extern "C" {
       digitalWrite(RED_LED,0);
       if(toothFlag){
        toothFlag = false;
-       digitalWrite(BLUE_LED,0);
+       digitalWrite(TOOTH_PIN,0);
       }else{
         toothFlag = true;
-       digitalWrite(BLUE_LED,1);  
+       digitalWrite(TOOTH_PIN,1);  
       }
     }else{
-      digitalWrite(BLUE_LED,0);
+      digitalWrite(TOOTH_PIN,0);
       digitalWrite(RED_LED,1);
     }
     crank_angle += 3;
