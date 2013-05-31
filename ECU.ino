@@ -21,7 +21,7 @@ long testTimer = 0;
 
 // Lambda
 double lambda = 512;              // The value read from the lambda analog input pin 512 should be lambda = 1
-char lambdaDeadband = 20;        // The deadback for lambda feedback, don't adjust the output within this region from lambda = 512
+unsigned lambdaDeadband = 20;        // The deadback for lambda feedback, don't adjust the output within this region from lambda = 512
 double lambdaSetpoint = 512;
 String fuelControl = "PID";  // Whether to use lambda feedback or the engine map
 
@@ -37,22 +37,7 @@ unsigned ignDuration = calcTime(1500,64); // The time that the ignition coil cha
 // The engine maps store values for open loop operation
 // The first dimension in the array are the engine load/throttle position in multiples of 10 between 0 and 100
 // The second dimension is for the engine speed in multiples of 100 up to 6000 RPM
-//       0   500  1000  1500  2000  2500  3000  3500  4000  4500  5000  5500  6000
-/*
-unsigned fuelMap[MAP_SPD][MAP_SPD] = {
-	{215,	215,	256,	215,	215,	215,	215,	215,	215,	215,	0,	0,	0},
-	{293,	343,	480,	593,	715,	894,	1086,	193,	193,	193,	0,	0,	0},
-	{372,	472,	704,	972,	1215,	1573,	1957,	172,	172,	172,	0,	0,	0},
-	{450,	600,	929,	1350,	1715,	2252,	2828,	150,	150,	150,	0,	0,	0},
-	{529,	729,	1153,	1729,	2215,	2932,	3700,	129,	129,	129,	0,	0,	0},
-	{607,	857,	1378,	2107,	2715,	3611,	4571,	107,	107,	107,	0,	0,	0},
-	{686,	986,	1602,	2486,	3215,	4290,	5442,	86,	86,	86,	0,	0,	0},
-	{764,	1114,	1826,	2864,	3715,	4970,	6314,	64,	64,	64,	0,	0,	0},
-	{843,	1243,	2051,	3243,	4215,	5649,	7185,	43,	43,	43,	0,	0,	0},
-	{921,	1371,	2275,	3621,	4715,	6328,	8056,	21,	21,	21,	0,	0,	0},
-	{1000,	1500,	2500,	4000,	5216,	7008,	8928,	0,	0,	0,	0,	0,	0}
-};
-*/
+//       0      500     1000    1500    2000    2500    3000    3500    4000    4500    5000    5500  6000
 unsigned fuelMap[11][13] = {
 	{0,	112,	224,	0,	0,	0,	0,	0,	0,	0,	0,	0,	0},
 	{0,	248,	336,	600,	0,	0,	0,	0,	0,	0,	0,	0,	0},
@@ -65,13 +50,15 @@ unsigned fuelMap[11][13] = {
 	{0,	1200,	1991,	3072,	4206,	5365,	6752,	7552,	0,	0,	0,	0,	0},
 	{0,	1336,	2136,	3440,	4740,	6051,	6992,	8352,	8600,	0,	0,	0,	0},
 	{0,	1472,	2368,	3808,	5280,	6720,	7648,	8960,	9000,	0,	0,	0,	0}
-//	{0,	0,	0,	0,	0,	0,	0,	0,	0,	0,	0,	0,	0},
-//	{0,	0,	0,	0,	0,	0,	0,	0,	0,	0,	0,	0,	0}
 };
 
 // For PID
 //PID lambdaPID(&lambda,&fuelDuration,&lambdaSetpoint,1,1,0.1,DIRECT); // Settings for whole lambda control, work ok at high speeds not so well at low speeds
-PID lambdaPID(&lambda,&fuelDuration,&lambdaSetpoint,0.1,0.1,0,DIRECT); // Settings for map with lambda
+float kP = 0.1;
+float kI = 5.0;
+float kD = 0;
+
+PID lambdaPID(&lambda,&fuelDuration,&lambdaSetpoint,kP,kI,kD,DIRECT); // Settings for map with lambda
 void setup() {
   
   // initialize the crank sensor as a input:
@@ -150,7 +137,11 @@ void loop() {
   }else if(fuelControl == "MAP"){
     
     // Read the fuel value out of the map
-    fuelDuration = calcTime(fuelMap[round(analogRead(THROTTLE_PIN)/1023)*10][round(RPM/500)],64);
+    //fuelDuration = calcTime(fuelMap[round((float)analogRead(THROTTLE_PIN)/102.3)][round((float)RPM/500)],64);
+    unsigned time = calcTime(fuelMap[round((float)analogRead(THROTTLE_PIN)/102.3)][round((float)RPM/500)],64);
+    //Serial.print(time-lambdaDeadband);Serial.print("\t");Serial.println(time+lambdaDeadband);
+    lambdaPID.SetOutputLimits(time-lambdaDeadband, time+lambdaDeadband);
+    lambdaPID.Compute();
     
   }else if(fuelControl == "MAP_LAMBDA"){
     unsigned minVal,maxVal,tps,spd;
@@ -167,17 +158,17 @@ void loop() {
     
     minVal = calcTime(fuelMap[tps][spd],64);
     tps = round((float)analogRead(THROTTLE_PIN)/102.3);
-    if(tps < TPS_MAX -1){
+    if(tps < MAP_TPS -1){
       tps++;
     }
     
     spd = round((float)RPM/500);
-    if(spd < SPD_MAX-1){
+    if(spd < MAP_SPD -1){
       spd++;
     }
     
     maxVal = calcTime(fuelMap[tps][spd],64);
-    Serial.print(round((float)analogRead(THROTTLE_PIN)/102.3));Serial.print("\t");Serial.print(round((float)RPM/500));Serial.print("\t");Serial.print(fuelMap[round((float)analogRead(THROTTLE_PIN)/102.3)-1][round((float)RPM/500)-1]);Serial.print("\t");Serial.println(fuelMap[round((float)analogRead(THROTTLE_PIN)/102.3)+1][round((float)RPM/500)+1]);
+    //Serial.print(tps);Serial.print("\t");Serial.print(spd);Serial.print("\t");Serial.print(fuelMap[round((float)analogRead(THROTTLE_PIN)/102.3)-1][round((float)RPM/500)-1]);Serial.print("\t");Serial.println(fuelMap[tps][spd]);
     lambdaPID.SetOutputLimits(minVal, maxVal);
     lambdaPID.Compute();
   }
@@ -233,6 +224,9 @@ void serialEvent() {
     case 'f':
       Serial.print("Set Fuel");
       fuelDuration = calcTime(Serial.parseInt(),64);
+      Serial.println("Fuel feedback set to manual control");
+      // Turn lambda feedback off, and use the map instead
+      fuelControl = "manual"; 
     break;
     case 'd':
       fuelTime = calcTime(Serial.parseInt(),64);
@@ -245,17 +239,19 @@ void serialEvent() {
     break;
     case 'l':
       Serial.println("L is for Lambda");
-      
-      switch(Serial.read()){
+      next = Serial.read();
+      switch(next){
         case 'd':
-          Serial.println("Fuel set to use ON OFF feedback");
+          Serial.print("Fuel set to use ON OFF feedback new deadband:");
           lambdaDeadband = Serial.parseInt();
+          Serial.println(lambdaDeadband);
           fuelControl = "ONOFF";
         break;
         case 's':
           Serial.println("Fuel set to use PID feedback");
           fuelControl = "PID";
           lambdaSetpoint = Serial.parseInt();
+          lambdaPID.SetOutputLimits(1, 65535);
         break;
         case 't':
           Serial.println("Fuel set to use trim pots");
@@ -263,16 +259,22 @@ void serialEvent() {
         break;
         case 'm':
           Serial.println("Fuel set to use map");
+          Serial.print("new deadband:");
+          lambdaDeadband = Serial.parseInt();
+          Serial.println(lambdaDeadband);
           fuelControl = "MAP";
         break;
         case 'l':
           Serial.println("Fuel set to use map with lambda");
           fuelControl = "MAP_LAMBDA";
         break;
+        case 'h':
         default:
-          Serial.println("Fuel feedback set to manual control");
-          // Turn lambda feedback off, and use the map instead
-          fuelControl = "manual"; 
+          Serial.println("d is for Deadband and ONOFF control");
+          Serial.println("s is for Setpoint and PID control");
+          Serial.println("t is for Trimpot adjustment");
+          Serial.println("m is for Map");
+          Serial.println("l is for map with Lambda");
         break;
       }
     break;
@@ -332,7 +334,55 @@ void serialEvent() {
             }
           }
         break;
+        case 'h':
+        default:
+          Serial.println("s is for Store");
+          Serial.println("w is for Write (output in a saveable format)");
+          Serial.println("d is for Display");
+          Serial.println("r is for Reset");
+        break;
       }
+    break;
+    case 'p':
+      Serial.println("\np is for PID.\n");
+      // 0.01 0.1 0
+      switch(Serial.read()){
+       case 'p':
+         kP = Serial.parseFloat();
+         Serial.print("Proportional is now: ");Serial.println(kP);
+       break;
+       case 'i':
+         kI = Serial.parseFloat();
+         Serial.print("Integral is now: ");Serial.println(kI);
+       break;
+       case 'd':
+         kD = Serial.parseFloat();
+         Serial.print("Derivative is now: ");Serial.println(kD);
+       break;
+       case 's':
+         lambdaPID.SetSampleTime(Serial.parseInt());
+       break;
+       case 'h':
+       default:
+       
+         Serial.print("p is for Proportional: ");Serial.println(kP);
+         Serial.print("i is for Integral: ");Serial.println(kI);
+         Serial.print("d is for Derivative: ");Serial.println(kD);
+         Serial.println("s is for Sample time");
+       break;
+      }
+      lambdaPID.SetTunings(kP,kI,kD);
+      
+    break;
+    case 'h':
+    default:
+      Serial.println("\nh is for help.\n");
+      Serial.println("m is for Map");
+      Serial.println("l is for Lambda");
+      Serial.println("t is for ignition angle");
+      Serial.println("f is for fuel duration");
+      Serial.println("d is for fuel timing\n");
+      Serial.println("p is for PID");
     break;
   }  
   // Clear out anything left in the serial buffer (ignore it)
@@ -354,7 +404,13 @@ void missingToothISR(){
     TIFR1 |= 1 << OCF1A;        // Write a 1 to the interrupt flag to clear it
     TCNT1 = 0;                  // Reset the timer count to 0
     TIMSK1 |= (1 << OCIE1A);    // enable timer compare interrupt
-    OCR1A = fuelTime;           // Load the compare match register
+    if(fuelTime > 0){
+      OCR1A = fuelTime;           // Load the compare match register
+    }else{
+      digitalWrite(FUEL_PIN,HIGH);
+      OCR1A = fuelDuration; 
+    }
+    // If the fuel is still on for some reason(!) then turn it off
     
     // Start the ignition delay timer
     TIFR3 |= 1 << OCF3A;        // Write a 1 to the interrupt flag to clear it
