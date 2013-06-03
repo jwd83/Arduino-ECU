@@ -1,23 +1,12 @@
 #include <PID_v1.h>
+#include "includes.h"
 
-#define TOOTH_OFFSET 240  // How many degrees after missing tooth is TDC
-#define TOOTH_PIN 2       // The missing tooth pulse input
-#define FUEL_PIN 12       // The fuel injector control pin
-#define IGN_PIN 13        // the pin that the ignition coild is attached to
-
-#define THROTTLE_PIN 0    // Throttle position sensor analog input
-#define LAMBDA_PIN 1      // Lambda sensor analog input pin
-#define FUEL_TRIM 2       // Fuel trim potentiometer analog input
-#define IGN_TRIM 3        // Ignition trim potentiometer analog input
-
-#define MAP_SPD 13
-#define MAP_TPS 11
+// Missing tooth
 unsigned long lastTooth = 0;          // Point in time that the last tooth occured
 unsigned toothTime = 32000;          // The time between teeth
 unsigned crank_angle;            // The current crank angle
 unsigned RPM = 0;                // The current engine RPM
 long testTimer = 0;
-
 
 // Lambda
 double lambda = 512;              // The value read from the lambda analog input pin 512 should be lambda = 1
@@ -32,28 +21,9 @@ double fuelDuration = calcTime(4000,64); // The fuel pulse duration, default val
 // Ignition  
 byte ignAngle = 18; // The ignition delay time @TODO modify to be crank angle based
 unsigned ignDuration = calcTime(1500,64); // The time that the ignition coil charges for
-
-// Maps
-// The engine maps store values for open loop operation
-// The first dimension in the array are the engine load/throttle position in multiples of 10 between 0 and 100
-// The second dimension is for the engine speed in multiples of 100 up to 6000 RPM
-//       0      500     1000    1500    2000    2500    3000    3500    4000    4500    5000    5500  6000
-unsigned fuelMap[11][13] = {
-	{0,	112,	224,	0,	0,	0,	0,	0,	0,	0,	0,	0,	0},
-	{0,	248,	336,	600,	0,	0,	0,	0,	0,	0,	0,	0,	0},
-	{0,	348,	561,	864,	1200,	0,	0,	0,	0,	0,	0,	0,	0},
-	{0,	520,	786,	1232,	1536,	0,	0,	0,	0,	0,	0,	0,	0},
-	{0,	656,	1011,	1600,	2352,	2832,	0,	0,	0,	0,	0,	0,	0},
-	{0,	792,	1236,	1968,	2604,	3312,	0,	0,	0,	0,	0,	0,	0},
-	{0,	928,	1461,	2336,	3138,	4288,	4984,	0,	0,	0,	0,	0,	0},
-	{0,	1064,	1686,	2704,	3672,	4679,	5680,	0,	0,	0,	0,	0,	0},
-	{0,	1200,	1991,	3072,	4206,	5365,	6752,	7552,	0,	0,	0,	0,	0},
-	{0,	1336,	2136,	3440,	4740,	6051,	6992,	8352,	8600,	0,	0,	0,	0},
-	{0,	1472,	2368,	3808,	5280,	6720,	7648,	8960,	9000,	0,	0,	0,	0}
-};
+String ignControl = "TRIM";
 
 // For PID
-//PID lambdaPID(&lambda,&fuelDuration,&lambdaSetpoint,1,1,0.1,DIRECT); // Settings for whole lambda control, work ok at high speeds not so well at low speeds
 float kP = 0.1;
 float kI = 5.0;
 float kD = 0;
@@ -98,7 +68,6 @@ void setup() {
   TCCR3B = 0;               // Turn off noise cancelling, turn off edge select, waveform gen mode 0, no clock source
   TCNT3  = 0;               // Reset timer counter to 1
   
-  //OCR3A = ignTime;  // Load the compare match register
   TCCR3B |= (1 << WGM32);   // CTC mode
   TCCR3B |= (1 << CS31);    // Load prescaler
   TCCR3B |= (1 << CS30);    // Load prescaler
@@ -110,8 +79,6 @@ void setup() {
 void loop() {
   //delay(50);
   
-  //lambda = temp2*temp2;
-  
   //lambda = (float)0.9*lambda + (float)analogRead(lambdaPin)*0.1; // low pass filter
   lambda = analogRead(LAMBDA_PIN);  // no filter
   //lambda = map(analogRead(lambdaPin),0,865,0,1023);    // Remap for max vals
@@ -121,24 +88,19 @@ void loop() {
     }else if(lambda < 512 - lambdaDeadband && fuelDuration > 1){
        fuelDuration -= 1; 
     }
-  }
-  
-  
-  // Use the map if lambda is turned off
-  if(fuelControl == "PID"){
+  }else if(fuelControl == "PID"){ // Use the map if lambda is turned off
       // PID Library control
       lambdaPID.Compute();
   }else if(fuelControl == "TRIM"){
     
     // Use the analog inputs to set the fuelling
     fuelDuration = analogRead(FUEL_TRIM)*4;
-    ignAngle = analogRead(IGN_TRIM);
     
   }else if(fuelControl == "MAP"){
     
     // Read the fuel value out of the map
-    //fuelDuration = calcTime(fuelMap[round((float)analogRead(THROTTLE_PIN)/102.3)][round((float)RPM/500)],64);
-    unsigned time = calcTime(fuelMap[round((float)analogRead(THROTTLE_PIN)/102.3)][round((float)RPM/500)],64);
+    //fuelDuration = calcTime(fuelMap[0][round((float)analogRead(THROTTLE_PIN)/102.3)][round((float)RPM/500)],64);
+    unsigned time = calcTime(fuelMap[0][round((float)analogRead(THROTTLE_PIN)/102.3)][round((float)RPM/500)],64);
     //Serial.print(time-lambdaDeadband);Serial.print("\t");Serial.println(time+lambdaDeadband);
     lambdaPID.SetOutputLimits(time-lambdaDeadband, time+lambdaDeadband);
     lambdaPID.Compute();
@@ -156,7 +118,7 @@ void loop() {
       spd--;
     }
     
-    minVal = calcTime(fuelMap[tps][spd],64);
+    minVal = calcTime(fuelMap[0][tps][spd],64);
     tps = round((float)analogRead(THROTTLE_PIN)/102.3);
     if(tps < MAP_TPS -1){
       tps++;
@@ -167,12 +129,17 @@ void loop() {
       spd++;
     }
     
-    maxVal = calcTime(fuelMap[tps][spd],64);
-    //Serial.print(tps);Serial.print("\t");Serial.print(spd);Serial.print("\t");Serial.print(fuelMap[round((float)analogRead(THROTTLE_PIN)/102.3)-1][round((float)RPM/500)-1]);Serial.print("\t");Serial.println(fuelMap[tps][spd]);
+    maxVal = calcTime(fuelMap[0][tps][spd],64);
+    //Serial.print(tps);Serial.print("\t");Serial.print(spd);Serial.print("\t");Serial.print(fuelMap[0][round((float)analogRead(THROTTLE_PIN)/102.3)-1][round((float)RPM/500)-1]);Serial.print("\t");Serial.println(fuelMap[0][tps][spd]);
     lambdaPID.SetOutputLimits(minVal, maxVal);
     lambdaPID.Compute();
   }
   
+  if(ignControl == "TRIM"){
+    ignAngle = analogRead(IGN_TRIM)/10;
+  }else if(ignControl == "MAP"){
+    ignAngle = fuelMap[1][round((float)analogRead(THROTTLE_PIN)/102.3)][round((float)RPM/500)];
+  }
   
   if(millis()%500 >495){
     RPM = 500000/toothTime;
@@ -219,7 +186,7 @@ void loop() {
 
 void serialEvent() {
   char temp = Serial.read();
-  char next;
+  //char next;
   switch(temp){
     case 'f':
       Serial.print("Set Fuel");
@@ -232,15 +199,66 @@ void serialEvent() {
       fuelTime = calcTime(Serial.parseInt(),64);
     break;
     case 'i':
-      ignDuration = calcTime(Serial.parseInt(),64);
-    break;
-    case 't':
-      ignAngle = Serial.parseInt();
+      Serial.println("i is for Ignition");
+      switch(Serial.read()){
+        case 'a':
+          ignAngle = Serial.parseInt();
+          Serial.print("Ignition angle is now: ");Serial.println(ignAngle);
+          ignControl = "manual";
+        break;
+        case 'd':
+          ignDuration = Serial.parseInt();
+          Serial.print("Ignition duration is now: ");Serial.println(ignDuration);
+        break;
+        case 't':
+          Serial.println("ignition timing now from trim pots");
+          ignControl = "TRIM";
+        break;
+        case 'm':
+          Serial.println("m is for Map");
+          switch(Serial.read()){
+            case 's':
+              Serial.println("Stored current values in map");
+              Serial.println(round((float)analogRead(THROTTLE_PIN)/102.3));
+              Serial.println(round((float)RPM/500));
+              Serial.println(ignAngle);
+              fuelMap[1][round((float)analogRead(THROTTLE_PIN)/102.3)][round((float)RPM/500)] = ignAngle;
+            break;
+            case 'e':
+              ignControl = "MAP";
+            break;
+            case 'd':
+              mapDisplay(1);
+            break;
+            case 'w':
+              Serial.println("Write map to EEPROM");
+              mapOutput(1);
+            break;
+            case 'r':
+              Serial.println("Reset the map");
+              mapReset(1);
+            break;
+            case 'h':
+            default:
+              Serial.println("s is for Store");
+              Serial.println("w is for Write (output in a saveable format)");
+              Serial.println("d is for Display");
+              Serial.println("r is for Reset");
+            break;
+          }
+        break;
+        case 'h':
+        default:
+          Serial.println("a is for Angle of ignition advance");
+          Serial.println("d is for Duration of coil charge time (in ms)");
+          Serial.println("t is for Trim potentiometer for setting advance");
+          Serial.println("m is for Map");
+        break;
+      }
     break;
     case 'l':
       Serial.println("L is for Lambda");
-      next = Serial.read();
-      switch(next){
+      switch(Serial.read()){
         case 'd':
           Serial.print("Fuel set to use ON OFF feedback new deadband:");
           lambdaDeadband = Serial.parseInt();
@@ -286,53 +304,18 @@ void serialEvent() {
           Serial.println(round((float)analogRead(THROTTLE_PIN)/102.3));
           Serial.println(round((float)RPM/500));
           Serial.println(fuelDuration*4);
-          fuelMap[round((float)analogRead(THROTTLE_PIN)/102.3)][round((float)RPM/500)] = fuelDuration*4;
+          fuelMap[0][round((float)analogRead(THROTTLE_PIN)/102.3)][round((float)RPM/500)] = fuelDuration*4;
         break;
         case 'd':
-          Serial.print("\n");
-          for(char spd = -1; spd < MAP_SPD; spd++){
-            for(char tps = -1; tps < MAP_TPS; tps++){
-                if(spd == -1){
-                  Serial.print(tps*10);Serial.print("\t"); 
-                }else{
-                 if(tps == -1){
-                   Serial.print(spd*500);
-                 }else{
-                   Serial.print(fuelMap[tps][spd]);
-                 }
-                 Serial.print("\t");
-                }
-            }
-            Serial.print("\n");
-          }
-          Serial.print("\n");
+          mapDisplay(0);
         break;
         case 'w':
           Serial.println("Write map to EEPROM");
-          Serial.print("\nunsigned fuelMap[11][13] = {");
-          for(char tps = 0; tps < MAP_TPS; tps++){
-            Serial.print("\n\t{");
-            for(char spd = 0; spd < MAP_SPD; spd++){
-               Serial.print(fuelMap[tps][spd]);
-               
-               if(spd != 12){
-                  Serial.print(",\t");
-               }
-            }
-            Serial.print("}");
-            if(tps != 10){
-               Serial.print(",");
-            }
-          }
-          Serial.print("\n};\n");
+          mapOutput(0);
         break;
         case 'r':
           Serial.println("Reset the map");
-          for(char tps = 0; tps < MAP_SPD; tps++){
-            for(char spd = 0; spd < MAP_SPD; spd++){
-              fuelMap[tps][spd] = 0;
-            }
-          }
+          mapReset(0);
         break;
         case 'h':
         default:
@@ -379,7 +362,7 @@ void serialEvent() {
       Serial.println("\nh is for help.\n");
       Serial.println("m is for Map");
       Serial.println("l is for Lambda");
-      Serial.println("t is for ignition angle");
+      Serial.println("i is for ignition");
       Serial.println("f is for fuel duration");
       Serial.println("d is for fuel timing\n");
       Serial.println("p is for PID");
@@ -397,8 +380,9 @@ void missingToothISR(){
   long temp = time - lastTooth;
   
 
-  if(temp > (5*toothTime) || crank_angle > 360){
+  if(temp > (5*toothTime) || crank_angle > 345){
     // Missing tooth detected
+    //outputMarker(IGN_PIN);
     
     // Sort out fuel timer
     TIFR1 |= 1 << OCF1A;        // Write a 1 to the interrupt flag to clear it
@@ -431,20 +415,34 @@ void missingToothISR(){
     // This method requires careful prescaler choice since the timer is fully utilised at the RPM limits 64 seems to work ok
     // The calculations also need to be cast to floats to avoid strange results
     OCR3A = calcTime((float)(TOOTH_OFFSET - ignAngle)*toothTime/3.0 - (ignDuration << 2) ,64);            // Load the compare match register
-    //OCR3A = ignTime;            // Load the compare match register
+    //OCR3A = 1000;            // Load the compare match register
     
     //Serial.print(time);Serial.print("\t");
-    //Serial.print(lastTooth);Serial.print("\t");
-    //Serial.println(temp);
+//    Serial.print(lastTooth);Serial.print("\t");
+//    Serial.print(temp);Serial.println("\t");
+//    Serial.println(crank_angle);
+
+    if(crank_angle <= 345){
+      temp = temp/6.0;              // This is how long a tooth would have taken and allows for correct calculation of engine RPM
+    }
     
     crank_angle = 0;            // Reset the crank angle
-    temp = temp/6.0;              // This is how long a tooth would have taken and allows for correct calculation of engine RPM
+    
 
   }else{    
     crank_angle+=3;
+    /*
+    if(crank_angle >= (TOOTH_OFFSET - ignAngle) && crank_angle < (TOOTH_OFFSET - ignAngle + 3)){
+      digitalWrite(IGN_PIN,HIGH);
+      TIFR3 |= 1 << OCF3A;        // Write a 1 to the interrupt flag to clear it
+      TCNT3 = 0;                  // Reset the timer count to 0
+      TIMSK3 |= (1 << OCIE3A);    // enable timer compare interrupt
+      OCR3A = (int)ignDuration;
+    }*/
+    
   }
   lastTooth = time;
-   toothTime = temp; 
+   toothTime = (int)((float)0.9*toothTime + (float)0.1*temp);  
 }
 
 // Deal with turning the fuel on and off
@@ -474,7 +472,7 @@ ISR(TIMER3_COMPA_vect)          // timer compare interrupt service routine
      TIFR3 |= 1 << OCF3A;        // Write a 1 to the interrupt flag to clear it
      TCNT3 = 0;                  // Reset the timer count to 0
      //Serial.println(ignDuration);
-     OCR3A = ignDuration;        // Load the compare match register with the coil charge time
+     OCR3A = (int)ignDuration;        // Load the compare match register with the coil charge time
      testTimer = micros();
    }else{
      //Serial.println(micros()- testTimer);
