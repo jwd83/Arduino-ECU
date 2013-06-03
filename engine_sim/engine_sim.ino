@@ -13,7 +13,8 @@
 
 #define LAMBDA_PIN PB_4
 
-int crank_angle;
+double three = 3;
+double crank_angle;
 int RPM;
 long crankTimer;
 long fuelTimer;
@@ -32,9 +33,11 @@ int lambdaOut = 128;
 Engine engine;
  
 void setup()
-{    
+{ 
+  
   pinMode(TOOTH_PIN,OUTPUT);
   pinMode(RED_LED,OUTPUT);
+  pinMode(BLUE_LED,OUTPUT);
   pinMode(PUSH2,INPUT);
   pinMode(PUSH1,INPUT);
   pinMode(PE_0,INPUT);
@@ -49,8 +52,11 @@ void setup()
   initTimer((int)RPM);
   inString = "";
   fuelTimer = 0;
+  fuelDelay = 0;
+  
   
   Serial.begin(115200);
+  
   Serial.println("Init");
   Serial.println(RPM);
   
@@ -66,7 +72,7 @@ void setup()
  
 void loop()
 {
-
+    digitalWrite(RED_LED,LOW);
    delay(50);
    engine.simulate(0.05);
    
@@ -82,7 +88,7 @@ void loop()
    // Output the AFR on an analog pin to be read by ECU
    analogWrite(LAMBDA_PIN,lambdaOut);
    
-   if(analogThrottle == true){
+   if(true == analogThrottle){
       engine.throttle = analogRead(THROTTLE_PIN)/40.95;
    }
    
@@ -91,25 +97,38 @@ void loop()
    Serial.print("\t");
    Serial.print(engine.s);
    Serial.print("\t");
+   Serial.print(fuelDelay);
+   Serial.print("\t");
+   Serial.print(engine.F);
+   Serial.print("\t");
    Serial.print(engine.AFR);
    Serial.print("\t");
-   Serial.print(engine.ignition);
+   Serial.print(lambdaOut);
    Serial.print("\t");
-   Serial.println(lambdaOut);
+   Serial.println(engine.ignition);
    
+   /*
+   three = 3;
+   Serial.print(crank_angle);   Serial.print("\t");
+   Serial.println(modf(crank_angle,&three) <= 0.1);  //Serial.print("\t");
+   //Serial.println(three);
+   */
    
-   setTimer((int)engine.s);
+   setTimer((int)engine.s*30);
 }
 
 void serialEvent(){
   char temp = Serial.read();
   switch(temp){
     case 't':
+      Serial.println("Set Throttle");
       if(Serial.peek() != 'a'){
         engine.throttle = Serial.parseInt();
         analogThrottle = false;
+        Serial.println("Throttle set by Serial");
       }else{
         analogThrottle = true;
+        Serial.println("Throttle set by analog input");
       }
     break;
     case 'l':
@@ -130,10 +149,20 @@ void fuelChange(){
   if(digitalRead(FUEL_PIN) == HIGH){
      fuelDelay = micros() - fuelTimer;
      fuelTimer = micros();
+     digitalWrite(BLUE_LED,HIGH);
   }else{
      fuelDuration = micros() - fuelTimer;
      fuelTimer = micros();
-     engine.F = fuelDuration;
+     //engine.F = fuelDuration;
+     if(fired == false){
+      Serial.println(engine.F); 
+     }
+     engine.F = (float)0.2* engine.F + (float)0.8* fuelDuration;
+     digitalWrite(BLUE_LED,LOW);
+     if(fired == false){
+      Serial.println(engine.F); 
+     }
+     //outputMarker(BLUE_LED);
   }
 }
 
@@ -155,11 +184,23 @@ void button2Push(){
   }
 }
 
+// Do a short pulse on the given pin
+// Can be used to show events as a pin output
+void outputMarker(unsigned pin){
+   digitalWrite(pin,LOW);
+   delayMicroseconds(10);
+   digitalWrite(pin,HIGH);
+   delayMicroseconds(100);
+   digitalWrite(pin,LOW); 
+   delayMicroseconds(10);
+}
+
 extern "C" {
   void scott(){
-    
-    if(crank_angle < 345){
-      digitalWrite(RED_LED,0);
+    three = 3;
+    boolean isTooth = modf(crank_angle,&three) <= 0.1;
+    if(crank_angle < 345 && isTooth){
+      //digitalWrite(RED_LED,0);
       if(toothFlag){
        toothFlag = false;
        digitalWrite(TOOTH_PIN,0);
@@ -167,17 +208,19 @@ extern "C" {
         toothFlag = true;
        digitalWrite(TOOTH_PIN,1);  
       }
-    }else{
+    }else if(isTooth){
       digitalWrite(TOOTH_PIN,0);
-      digitalWrite(RED_LED,1);
+     // digitalWrite(RED_LED,1);
     }
-    crank_angle += 3;
-    if(crank_angle == 360){
+    crank_angle += 0.1;
+    if(crank_angle >= 360){
       crank_angle = 0;
       if(fired == false){
-        Serial.println("Missfire!");
+        Serial.print("Missfire! ");Serial.println(engine.F);
       };
+      outputMarker(BLUE_LED);
       fired = false;
+      fuelTimer = micros();
     }
     
   }
