@@ -5,7 +5,7 @@
 #include "timer_blink.h"
 #include "Engine.h"
 
-#define TOOTH_OFFSET 240
+#define TOOTH_OFFSET 2400
 #define THROTTLE_PIN A0
 #define TOOTH_PIN PD_0
 #define IGN_PIN PD_1
@@ -13,8 +13,7 @@
 
 #define LAMBDA_PIN PB_4
 
-double three = 3;
-double crank_angle;
+unsigned crank_angle;
 int RPM;
 long crankTimer;
 long fuelTimer;
@@ -93,26 +92,15 @@ void loop()
    }
    
    
-   Serial.print(engine.throttle);
-   Serial.print("\t");
-   Serial.print(engine.s);
-   Serial.print("\t");
-   Serial.print(fuelDelay);
-   Serial.print("\t");
-   Serial.print(engine.F);
-   Serial.print("\t");
-   Serial.print(engine.AFR);
-   Serial.print("\t");
-   Serial.print(lambdaOut);
-   Serial.print("\t");
-   Serial.println(engine.ignition);
+   Serial.print(engine.throttle);   Serial.print("\t");
+   Serial.print(engine.s);   Serial.print("\t");
+   Serial.print(fuelDelay);   Serial.print("\t");
+   Serial.print(engine.F);   Serial.print("\t");
+   Serial.print(engine.AFR);   Serial.print("\t");
+   Serial.print(lambdaOut);   Serial.print("\t");
+   Serial.println(engine.ignition/10.0);
    
-   /*
-   three = 3;
-   Serial.print(crank_angle);   Serial.print("\t");
-   Serial.println(modf(crank_angle,&three) <= 0.1);  //Serial.print("\t");
-   //Serial.println(three);
-   */
+   
    
    setTimer((int)engine.s*30);
 }
@@ -154,20 +142,14 @@ void fuelChange(){
      fuelDuration = micros() - fuelTimer;
      fuelTimer = micros();
      //engine.F = fuelDuration;
-     if(fired == false){
-      Serial.println(engine.F); 
-     }
      engine.F = (float)0.2* engine.F + (float)0.8* fuelDuration;
      digitalWrite(BLUE_LED,LOW);
-     if(fired == false){
-      Serial.println(engine.F); 
-     }
      //outputMarker(BLUE_LED);
   }
 }
 
 void ignChange(){
-  engine.ignition = TOOTH_OFFSET - crank_angle;
+  engine.ignition = TOOTH_OFFSET - (int)crank_angle;
   fired = true;
 }
 
@@ -197,9 +179,7 @@ void outputMarker(unsigned pin){
 
 extern "C" {
   void scott(){
-    three = 3;
-    boolean isTooth = modf(crank_angle,&three) <= 0.1;
-    if(crank_angle < 345 && isTooth){
+    if(crank_angle < 3450 && crank_angle%30 == 0){
       //digitalWrite(RED_LED,0);
       if(toothFlag){
        toothFlag = false;
@@ -208,15 +188,17 @@ extern "C" {
         toothFlag = true;
        digitalWrite(TOOTH_PIN,1);  
       }
-    }else if(isTooth){
+    }else if(crank_angle%30 == 0){
       digitalWrite(TOOTH_PIN,0);
      // digitalWrite(RED_LED,1);
     }
-    crank_angle += 0.1;
-    if(crank_angle >= 360){
+    crank_angle += 1;
+    if(crank_angle >= 3600){
+      //Serial.println(toothFlag);
+      toothFlag = 0;
       crank_angle = 0;
       if(fired == false){
-        Serial.print("Missfire! ");Serial.println(engine.F);
+        Serial.println("Missfire! ");
       };
       outputMarker(BLUE_LED);
       fired = false;
