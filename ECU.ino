@@ -79,6 +79,9 @@ void setup() {
 void loop() {
   //delay(50);
   
+  /* **********************************************************************
+  *************************** FUEL CONTROL *********************************
+  **************************************************************************/
   //lambda = (float)0.9*lambda + (float)analogRead(lambdaPin)*0.1; // low pass filter
   lambda = analogRead(LAMBDA_PIN);  // no filter
   //lambda = map(analogRead(lambdaPin),0,865,0,1023);    // Remap for max vals
@@ -135,49 +138,39 @@ void loop() {
     lambdaPID.Compute();
   }
   
+  /*************************************************************************
+  *************************** IGNITION CONTROL *****************************
+  **************************************************************************/
+  
   if(ignControl == "TRIM"){
     ignAngle = 13 + (float)analogRead(IGN_TRIM)/20;
   }else if(ignControl == "MAP"){
     ignAngle = fuelMap[1][round((float)analogRead(THROTTLE_PIN)/102.3)][round((float)RPM/500)];
   }
   
+  /*************************************************************************
+  *************************** SERIAL OUTPUT ********************************
+  **************************************************************************/
+  
   if(millis()%500 >495){
     RPM = 500000/toothTime;
-    Serial.print(RPM);
-    Serial.print("\t");
-    Serial.print(fuelDuration*4);
-    Serial.print("\t\t");
-    Serial.print(fuelTime*4);
-    Serial.print("\t");
-    Serial.print(ignDuration*4);
-    Serial.print("\t\t");
-    Serial.print(ignAngle);
-    Serial.print("\t");
-    Serial.print(lambda);
-    Serial.print("\t"); 
-    Serial.print(lambdaSetpoint);
-    Serial.print("\t");
-    Serial.print(analogRead(FUEL_TRIM));
-    Serial.print("\t");
-    Serial.print(analogRead(IGN_TRIM));
-    Serial.print("\t");
+    Serial.print(RPM);Serial.print("\t");
+    Serial.print(fuelDuration*4); Serial.print("\t\t");
+    Serial.print(fuelTime*4); Serial.print("\t\t");
+    Serial.print(ignDuration*4); Serial.print("\t\t");
+    Serial.print(ignAngle); Serial.print("\t\t");
+    Serial.print(lambda); Serial.print("\t"); 
+    Serial.print(lambdaSetpoint); Serial.print("\t\t");
     Serial.println(analogRead(THROTTLE_PIN)/10.23);
     if(millis()%5000 >4995){
-      Serial.println(fuelControl);
-      Serial.print("RPM");
-      Serial.print("\t");
-      Serial.print("fuelDuration");
-      Serial.print("\t");
-      Serial.print("fuelTime");
-      Serial.print(" ");
-      Serial.print("ignDuration");
-      Serial.print("\t");
-      Serial.print("ignTime");
-      Serial.print("\t");
-      Serial.print("lambda");
-      Serial.print("\t");
-      Serial.print("lambdaSetpoint");
-      Serial.print("\t");
+      Serial.print("Fuel control:"); Serial.println(fuelControl);
+      Serial.print("RPM");  Serial.print("\t");
+      Serial.print("fuelDuration");  Serial.print("\t");
+      Serial.print("fuelTime");  Serial.print("\t");
+      Serial.print("ignDuration");  Serial.print("\t");
+      Serial.print("ignAngle");  Serial.print("\t");
+      Serial.print("lambda");  Serial.print("\t");
+      Serial.print("lambdaSetpoint");  Serial.print("\t");
       Serial.println("throttle");
     }
   }
@@ -210,6 +203,82 @@ void serialEvent() {
           Serial.println("Fuel set to use trim pots");
             fuelControl = "TRIM";
           break;
+          case 'f':
+            Serial.println("F is for feedback");
+            switch(Serial.read()){
+              case 'd':
+                Serial.print("Fuel set to use ON OFF feedback new deadband:");
+                lambdaDeadband = Serial.parseInt();
+                Serial.println(lambdaDeadband);
+                fuelControl = "ONOFF";
+              break;
+              case 's':
+                Serial.println("Fuel set to use PID feedback");
+                fuelControl = "PID";
+                lambdaSetpoint = Serial.parseInt();
+                lambdaPID.SetOutputLimits(1, 65535);
+              break;
+              case 'm':
+                Serial.println("Fuel set to use map");
+                Serial.print("new deadband:");
+                lambdaDeadband = Serial.parseInt();
+                Serial.println(lambdaDeadband);
+                fuelControl = "MAP";
+              break;
+              case 'l':
+                Serial.println("Fuel set to use map with lambda");
+                fuelControl = "MAP_LAMBDA";
+              break;
+              case 'h':
+              default:
+                Serial.println("d is for Deadband and ONOFF control");
+                Serial.println("s is for Setpoint and PID control");
+                Serial.println("t is for Trimpot adjustment");
+                Serial.println("m is for Map");
+                Serial.println("l is for map with Lambda");
+              break;
+            }
+          break;
+          case 'm':
+            Serial.println("m is for Map");
+            switch(Serial.read()){
+              case 's':
+                Serial.println("Stored current values in map");
+                Serial.println(round((float)analogRead(THROTTLE_PIN)/102.3));
+                Serial.println(round((float)RPM/500));
+                Serial.println(fuelDuration*4);
+                fuelMap[0][round((float)analogRead(THROTTLE_PIN)/102.3)][round((float)RPM/500)] = fuelDuration*4;
+          
+              break;
+              case 'd':
+                mapDisplay(0);
+              break;
+              case 'w':
+                Serial.println("Write map to EEPROM");
+                mapOutput(0);
+              break;
+              case 'r':
+                Serial.println("Reset the map");
+                mapReset(0);
+              break;
+              case 'h':
+              default:
+                Serial.println("s is for Store");
+                Serial.println("w is for Write (output in a saveable format)");
+                Serial.println("d is for Display");
+                Serial.println("r is for Reset");
+              break;
+            }
+          break;
+          case 'h':
+          default:
+            Serial.println("x is to disable");
+            Serial.println("w is for Width (fuel pulse width)");
+            Serial.println("d is for Delay of fuel pulse");
+            Serial.println("t is for Trim pots");
+            Serial.println("f is for Feedback");
+            Serial.println("m is for Map");
+          break;
       }
     case 'i':
       Serial.println("i is for Ignition");
@@ -224,7 +293,7 @@ void serialEvent() {
           ignControl = "manual";
         break;
         case 'd':
-          ignDuration = Serial.parseInt();
+          ignDuration = calcTime(Serial.parseInt(),64);
           Serial.print("Ignition duration is now: ");Serial.println(ignDuration);
         break;
         case 't':
@@ -266,6 +335,7 @@ void serialEvent() {
         break;
         case 'h':
         default:
+          Serial.println("x is to disable igniton");
           Serial.println("a is for Angle of ignition advance");
           Serial.println("d is for Duration of coil charge time (in ms)");
           Serial.println("t is for Trim potentiometer for setting advance");
@@ -273,73 +343,7 @@ void serialEvent() {
         break;
       }
     break;
-    case 'l':
-      Serial.println("L is for Lambda");
-      switch(Serial.read()){
-        case 'd':
-          Serial.print("Fuel set to use ON OFF feedback new deadband:");
-          lambdaDeadband = Serial.parseInt();
-          Serial.println(lambdaDeadband);
-          fuelControl = "ONOFF";
-        break;
-        case 's':
-          Serial.println("Fuel set to use PID feedback");
-          fuelControl = "PID";
-          lambdaSetpoint = Serial.parseInt();
-          lambdaPID.SetOutputLimits(1, 65535);
-        break;
-        case 'm':
-          Serial.println("Fuel set to use map");
-          Serial.print("new deadband:");
-          lambdaDeadband = Serial.parseInt();
-          Serial.println(lambdaDeadband);
-          fuelControl = "MAP";
-        break;
-        case 'l':
-          Serial.println("Fuel set to use map with lambda");
-          fuelControl = "MAP_LAMBDA";
-        break;
-        case 'h':
-        default:
-          Serial.println("d is for Deadband and ONOFF control");
-          Serial.println("s is for Setpoint and PID control");
-          Serial.println("t is for Trimpot adjustment");
-          Serial.println("m is for Map");
-          Serial.println("l is for map with Lambda");
-        break;
-      }
-    break;
-    case 'm':
-      Serial.println("m is for Map");
-      switch(Serial.read()){
-        case 's':
-          Serial.println("Stored current values in map");
-          Serial.println(round((float)analogRead(THROTTLE_PIN)/102.3));
-          Serial.println(round((float)RPM/500));
-          Serial.println(fuelDuration*4);
-          fuelMap[0][round((float)analogRead(THROTTLE_PIN)/102.3)][round((float)RPM/500)] = fuelDuration*4;
-    
-        break;
-        case 'd':
-          mapDisplay(0);
-        break;
-        case 'w':
-          Serial.println("Write map to EEPROM");
-          mapOutput(0);
-        break;
-        case 'r':
-          Serial.println("Reset the map");
-          mapReset(0);
-        break;
-        case 'h':
-        default:
-          Serial.println("s is for Store");
-          Serial.println("w is for Write (output in a saveable format)");
-          Serial.println("d is for Display");
-          Serial.println("r is for Reset");
-        break;
-      }
-    break;
+
     case 'p':
       Serial.println("\np is for PID.\n");
       // 0.01 0.1 0
@@ -371,15 +375,17 @@ void serialEvent() {
       lambdaPID.SetTunings(kP,kI,kD);
       
     break;
+    case 's':
+      fuelControl = "disabled";
+      ignControl = "disabled";
+    break;
     case 'h':
     default:
       Serial.println("\nh is for help.\n");
-      Serial.println("m is for Map");
-      Serial.println("l is for Lambda");
-      Serial.println("i is for ignition");
-      Serial.println("f is for fuel duration");
-      Serial.println("d is for fuel timing\n");
+      Serial.println("f is for Fuel");
+      Serial.println("i is for Ignition");
       Serial.println("p is for PID");
+      Serial.println("s is for Stop the engine");
     break;
   }  
   // Clear out anything left in the serial buffer (ignore it)
