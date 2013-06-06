@@ -6,6 +6,7 @@
 #define MAP_TPS 11        // Size of throttle position dimension of map
 
 #define TOOTH_OFFSET 240  // How many degrees after missing tooth is TDC
+#define MIN_SPEED 100     // Minimum engine speed before fuel and ignition are enabled
 #define TOOTH_PIN 2       // The missing tooth pulse input
 #define FUEL_PIN 12       // The fuel injector control pin
 #define IGN_PIN 13        // the pin that the ignition coild is attached to

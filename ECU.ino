@@ -12,14 +12,14 @@ long testTimer = 0;
 double lambda = 512;              // The value read from the lambda analog input pin 512 should be lambda = 1
 unsigned lambdaDeadband = 20;        // The deadback for lambda feedback, don't adjust the output within this region from lambda = 512
 double lambdaSetpoint = 512;
-String fuelControl = "PID";  // Whether to use lambda feedback or the engine map
+String fuelControl = "disabled";  // Whether to use lambda feedback or the engine map
 
 // Fuel
 unsigned fuelTime = calcTime(1000,64);// The fuel pulse timing delay, default value at this timer's prescaler
 double fuelDuration = calcTime(4000,64); // The fuel pulse duration, default value at this timer's prescaler
 
 // Ignition  
-byte ignAngle = 18; // The ignition delay time @TODO modify to be crank angle based
+float ignAngle = 33; // The ignition delay time @TODO modify to be crank angle based
 unsigned ignDuration = calcTime(1500,64); // The time that the ignition coil charges for
 String ignControl = "TRIM";
 
@@ -136,7 +136,7 @@ void loop() {
   }
   
   if(ignControl == "TRIM"){
-    ignAngle = analogRead(IGN_TRIM)/10;
+    ignAngle = 13 + (float)analogRead(IGN_TRIM)/20;
   }else if(ignControl == "MAP"){
     ignAngle = fuelMap[1][round((float)analogRead(THROTTLE_PIN)/102.3)][round((float)RPM/500)];
   }
@@ -189,18 +189,35 @@ void serialEvent() {
   //char next;
   switch(temp){
     case 'f':
-      Serial.print("Set Fuel");
-      fuelDuration = calcTime(Serial.parseInt(),64);
-      Serial.println("Fuel feedback set to manual control");
-      // Turn lambda feedback off, and use the map instead
-      fuelControl = "manual"; 
-    break;
-    case 'd':
-      fuelTime = calcTime(Serial.parseInt(),64);
-    break;
+      switch(Serial.read()){
+          case 'x':
+            Serial.println("Fuel Disabled");
+            fuelControl = "disabled";
+          break;
+          case 'w':
+            Serial.print("Set Fuel");
+            fuelDuration = calcTime(Serial.parseInt(),64);
+            Serial.println("Fuel feedback set to manual control");
+            // Turn lambda feedback off, and use the map instead
+            fuelControl = "manual"; 
+          break;
+          case 'd':
+            fuelTime = calcTime(Serial.parseInt(),64);
+            Serial.print("Fuel delay now set to: ");
+            Serial.println(fuelTime);
+          break;
+          case 't':
+          Serial.println("Fuel set to use trim pots");
+            fuelControl = "TRIM";
+          break;
+      }
     case 'i':
       Serial.println("i is for Ignition");
       switch(Serial.read()){
+        case 'x':
+          Serial.println("Ignition Disabled");
+          ignControl = "disabled";
+        break;
         case 'a':
           ignAngle = Serial.parseInt();
           Serial.print("Ignition angle is now: ");Serial.println(ignAngle);
@@ -271,10 +288,6 @@ void serialEvent() {
           lambdaSetpoint = Serial.parseInt();
           lambdaPID.SetOutputLimits(1, 65535);
         break;
-        case 't':
-          Serial.println("Fuel set to use trim pots");
-          fuelControl = "TRIM";
-        break;
         case 'm':
           Serial.println("Fuel set to use map");
           Serial.print("new deadband:");
@@ -305,6 +318,7 @@ void serialEvent() {
           Serial.println(round((float)RPM/500));
           Serial.println(fuelDuration*4);
           fuelMap[0][round((float)analogRead(THROTTLE_PIN)/102.3)][round((float)RPM/500)] = fuelDuration*4;
+    
         break;
         case 'd':
           mapDisplay(0);
@@ -385,38 +399,40 @@ void missingToothISR(){
     //outputMarker(IGN_PIN);
     
     // Sort out fuel timer
-    TIFR1 |= 1 << OCF1A;        // Write a 1 to the interrupt flag to clear it
-    TCNT1 = 0;                  // Reset the timer count to 0
-    TIMSK1 |= (1 << OCIE1A);    // enable timer compare interrupt
-    if(fuelTime > 0){
-      OCR1A = fuelTime;           // Load the compare match register
-    }else{
-      digitalWrite(FUEL_PIN,HIGH);
-      OCR1A = fuelDuration; 
+    if(fuelControl != "disabled" && RPM > MIN_SPEED){
+      TIFR1 |= 1 << OCF1A;        // Write a 1 to the interrupt flag to clear it
+      TCNT1 = 0;                  // Reset the timer count to 0
+      TIMSK1 |= (1 << OCIE1A);    // enable timer compare interrupt
+      if(fuelTime > 0){
+        OCR1A = fuelTime;           // Load the compare match register
+      }else{
+        digitalWrite(FUEL_PIN,HIGH);
+        OCR1A = fuelDuration; 
+      }
     }
-    // If the fuel is still on for some reason(!) then turn it off
     
-    // Start the ignition delay timer
-    TIFR3 |= 1 << OCF3A;        // Write a 1 to the interrupt flag to clear it
-    TCNT3 = 0;                  // Reset the timer count to 0
-    TIMSK3 |= (1 << OCIE3A);    // enable timer compare interrupt
-    
-    //OCR3A = ignTime;            // Load the compare match register
-    
-    // Work out the timings for the fuel and ignition events based on the length of time the last tooth took
-    // 1 tooth is 3 degrees, so toothTime = 3 degrees worth of microseconds
-    // If the ignition pulse should finish 18 degrees before TDC then it has to start 18 degrees + duration of charge before TDC
-    // Convert 18 degrees into microseconds: (18/3)*toothTime
-    // Plus the time for charging: (18/3)*toothTime + ignDuration  = A
-    // Time after this missing tooth is TOOTH_OFFSET in microseconds minus A
-    // (TOOTH_OFFSET/3) * toothTime - ((18/3)*toothTime +ignDuration)
-    // (TOOTH_OFFSET/3) * toothTime -(18/3)*toothTime -ignDuration
-    // (TOOTH_OFFSET-18)*toothTime/3 - ignDuration
-    // This method requires careful prescaler choice since the timer is fully utilised at the RPM limits 64 seems to work ok
-    // The calculations also need to be cast to floats to avoid strange results
-    OCR3A = calcTime((float)(TOOTH_OFFSET - ignAngle)*toothTime/3.0 - (ignDuration << 2) ,64);            // Load the compare match register
-    //OCR3A = 1000;            // Load the compare match register
-    
+    if(ignControl != "disabled" && RPM > MIN_SPEED ){ 
+      // Start the ignition delay timer
+      TIFR3 |= 1 << OCF3A;        // Write a 1 to the interrupt flag to clear it
+      TCNT3 = 0;                  // Reset the timer count to 0
+      TIMSK3 |= (1 << OCIE3A);    // enable timer compare interrupt
+      
+      //OCR3A = ignTime;            // Load the compare match register
+      
+      // Work out the timings for the fuel and ignition events based on the length of time the last tooth took
+      // 1 tooth is 3 degrees, so toothTime = 3 degrees worth of microseconds
+      // If the ignition pulse should finish 18 degrees before TDC then it has to start 18 degrees + duration of charge before TDC
+      // Convert 18 degrees into microseconds: (18/3)*toothTime
+      // Plus the time for charging: (18/3)*toothTime + ignDuration  = A
+      // Time after this missing tooth is TOOTH_OFFSET in microseconds minus A
+      // (TOOTH_OFFSET/3) * toothTime - ((18/3)*toothTime +ignDuration)
+      // (TOOTH_OFFSET/3) * toothTime -(18/3)*toothTime -ignDuration
+      // (TOOTH_OFFSET-18)*toothTime/3 - ignDuration
+      // This method requires careful prescaler choice since the timer is fully utilised at the RPM limits 64 seems to work ok
+      // The calculations also need to be cast to floats to avoid strange results
+      OCR3A = calcTime((float)(TOOTH_OFFSET - ignAngle)*toothTime/3.0 - (ignDuration << 2) ,64);            // Load the compare match register
+      //OCR3A = 1000;            // Load the compare match register
+    }
     //Serial.print(time);Serial.print("\t");
 //    Serial.print(lastTooth);Serial.print("\t");
 //    Serial.print(temp);Serial.println("\t");
