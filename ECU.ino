@@ -3,7 +3,7 @@
 
 // Missing tooth
 unsigned long lastTooth = 0;          // Point in time that the last tooth occured
-unsigned toothTime = 32000;          // The time between teeth
+float toothTime = 32000;          // The time between teeth
 unsigned crank_angle;            // The current crank angle
 unsigned RPM = 0;                // The current engine RPM
 long testTimer = 0;
@@ -19,9 +19,10 @@ unsigned fuelTime = calcTime(1000,64);// The fuel pulse timing delay, default va
 double fuelDuration = calcTime(4000,64); // The fuel pulse duration, default value at this timer's prescaler
 
 // Ignition  
-float ignAngle = 33; // The ignition delay time @TODO modify to be crank angle based
-unsigned ignDuration = calcTime(1500,64); // The time that the ignition coil charges for
+float ignAngle = TOOTH_OFFSET - 22; // The ignition delay angle before TDC
+unsigned ignDuration = calcTime(8000,64); // The time that the ignition coil charges for
 String ignControl = "TRIM";
+unsigned ignTimeVal = 0;
 
 // For PID
 float kP = 0.1;
@@ -78,7 +79,10 @@ void setup() {
 
 void loop() {
   //delay(50);
+  ignTimeVal = ignAngle *toothTime/12 - ignDuration;
+
   
+  //Serial.print(toothTime);  Serial.print("\t");Serial.println(ignTimeVal);
   /* **********************************************************************
   *************************** FUEL CONTROL *********************************
   **************************************************************************/
@@ -143,23 +147,24 @@ void loop() {
   **************************************************************************/
   
   if(ignControl == "TRIM"){
-    ignAngle = 13 + (float)analogRead(IGN_TRIM)/20;
+    ignAngle = TOOTH_OFFSET - (13 + (float)analogRead(IGN_TRIM)/20);
   }else if(ignControl == "MAP"){
-    ignAngle = fuelMap[1][round((float)analogRead(THROTTLE_PIN)/102.3)][round((float)RPM/500)];
+    ignAngle = TOOTH_OFFSET - fuelMap[1][round((float)analogRead(THROTTLE_PIN)/102.3)][round((float)RPM/500)];
   }
   
   /*************************************************************************
   *************************** SERIAL OUTPUT ********************************
   **************************************************************************/
+  RPM = 500000/toothTime;
   
   if(millis()%500 >495){
-    RPM = 500000/toothTime;
     Serial.print(RPM);Serial.print("\t");
     Serial.print(fuelDuration*4); Serial.print("\t\t");
     Serial.print(fuelTime*4); Serial.print("\t\t");
     Serial.print(ignDuration*4); Serial.print("\t\t");
-    Serial.print(ignAngle); Serial.print("\t\t");
+    Serial.print(TOOTH_OFFSET - ignAngle); Serial.print("\t\t");
     Serial.print(lambda); Serial.print("\t"); 
+    //Serial.print(OCR3A); Serial.print("\t"); 
     Serial.print(lambdaSetpoint); Serial.print("\t\t");
     Serial.println(analogRead(THROTTLE_PIN)/10.23);
     if(millis()%5000 >4995){
@@ -288,7 +293,7 @@ void serialEvent() {
           ignControl = "disabled";
         break;
         case 'a':
-          ignAngle = Serial.parseInt();
+          ignAngle = TOOTH_OFFSET - Serial.parseInt();
           Serial.print("Ignition angle is now: ");Serial.println(ignAngle);
           ignControl = "manual";
         break;
@@ -308,7 +313,7 @@ void serialEvent() {
               Serial.println(round((float)analogRead(THROTTLE_PIN)/102.3));
               Serial.println(round((float)RPM/500));
               Serial.println(ignAngle);
-              fuelMap[1][round((float)analogRead(THROTTLE_PIN)/102.3)][round((float)RPM/500)] = ignAngle;
+              fuelMap[1][round((float)analogRead(THROTTLE_PIN)/102.3)][round((float)RPM/500)] = TOOTH_OFFSET + ignAngle;
             break;
             case 'e':
               ignControl = "MAP";
@@ -396,13 +401,15 @@ void serialEvent() {
 }
 
 void missingToothISR(){
-  long time = micros();
-  long temp = time - lastTooth;
+  unsigned long time = micros();
+  unsigned temp = time - lastTooth;
   
 
-  if(temp > (5*toothTime) || crank_angle > 345){
+  if(temp > ((unsigned)toothTime<<2) || crank_angle > 345){
     // Missing tooth detected
     //outputMarker(IGN_PIN);
+    
+    //delayMicroseconds(50);
     
     // Sort out fuel timer
     if(fuelControl != "disabled" && RPM > MIN_SPEED){
@@ -417,8 +424,9 @@ void missingToothISR(){
       }
     }
     
-    if(ignControl != "disabled" && RPM > MIN_SPEED ){ 
+    if(ignControl != "disabled" ){ //&& RPM > 500
       // Start the ignition delay timer
+      
       TIFR3 |= 1 << OCF3A;        // Write a 1 to the interrupt flag to clear it
       TCNT3 = 0;                  // Reset the timer count to 0
       TIMSK3 |= (1 << OCIE3A);    // enable timer compare interrupt
@@ -436,35 +444,90 @@ void missingToothISR(){
       // (TOOTH_OFFSET-18)*toothTime/3 - ignDuration
       // This method requires careful prescaler choice since the timer is fully utilised at the RPM limits 64 seems to work ok
       // The calculations also need to be cast to floats to avoid strange results
-      OCR3A = calcTime((float)(TOOTH_OFFSET - ignAngle)*toothTime/3.0 - (ignDuration << 2) ,64);            // Load the compare match register
-      //OCR3A = 1000;            // Load the compare match register
+      //OCR3A = calcTime(ignAngle*toothTime/3.0 ,64) - ignDuration;            // Load the compare match register
+      //OCR3A = (unsigned int)ignAngle * (toothTime/12) - ignDuration;            // Load the compare match register
+      //Serial.println(OCR3A);      //Serial.print("\t");
+      //Serial.println(OCR3A);
+      
     }
     //Serial.print(time);Serial.print("\t");
 //    Serial.print(lastTooth);Serial.print("\t");
-//    Serial.print(temp);Serial.println("\t");
-//    Serial.println(crank_angle);
+    //Serial.print(ignDuration);Serial.print("\t");
+    //Serial.print(ignAngle*temp/12 - ignDuration);Serial.print("\t");
+    //Serial.print(temp);Serial.print("\t");
+    //Serial.println(crank_angle);
+    //Serial.println("\t");
 
     if(crank_angle <= 345){
-      temp = temp/6.0;              // This is how long a tooth would have taken and allows for correct calculation of engine RPM
+      temp = temp/5.0;              // This is how long a tooth would have taken and allows for correct calculation of engine RPM
     }
+     
+    //Serial.print("MT");
+    //Serial.println(toothTime);
+    //Serial.println("");
     
     crank_angle = 0;            // Reset the crank angle
     
 
-  }else{    
-    crank_angle+=3;
+  }else{
     /*
-    if(crank_angle >= (TOOTH_OFFSET - ignAngle) && crank_angle < (TOOTH_OFFSET - ignAngle + 3)){
-      digitalWrite(IGN_PIN,HIGH);
+    int startAng = ignAngle - (ignDuration<<2)/((float)toothTime/3);
+        
+    if(ignControl != "disabled" && RPM > MIN_SPEED && crank_angle >= startAng && crank_angle < (startAng + 3)){
+      //Serial.println(calcTime((crank_angle - startAng) * toothTime/3,64));
+      //digitalWrite(IGN_PIN,HIGH); // Start the coil charging
+      OCR3A = calcTime((crank_angle - startAng) * toothTime/3,64);
       TIFR3 |= 1 << OCF3A;        // Write a 1 to the interrupt flag to clear it
       TCNT3 = 0;                  // Reset the timer count to 0
       TIMSK3 |= (1 << OCIE3A);    // enable timer compare interrupt
-      OCR3A = (int)ignDuration;
-    }*/
+      //OCR3A = (int)ignDuration - calcTime((crank_angle - startAng) * toothTime/3,64);
+      
+      //Serial.println(OCR3A);
+    }
+    */
+    /*
+    if(digitalRead(IGN_PIN) == LOW){
+      OCR3A += temp - toothTime;        // Make an adjustment to the time if the engine is accelerating
+    }
+    */
+    if(digitalRead(IGN_PIN) == LOW && (OCR3A - TCNT3) > toothTime/4 && ignControl != "disabled"){
+      
+      
+      //OCR3A = ((int)((float)ignAngle*toothTime/3.0) >> 4) - ignDuration;
+      //Serial.print((OCR3A - TCNT3)); Serial.print("\t");
+      //Serial.print(toothTime); Serial.println("\t");
+      OCR3A = ignTimeVal;            // Load the compare match register
+      //Serial.print(OCR3A); Serial.println("\t");
+    }
+    
+    crank_angle+=3;
+    
     
   }
+  
+  //Serial.println(toothTime);
+  //Serial.print(toothTime);Serial.print("\t");
+  /*
+  if(temp>10000){
+    Serial.print(time);Serial.print("\t");
+    Serial.print(toothTime);Serial.print("\t");
+    Serial.print(lastTooth);Serial.print("\t");
+    Serial.print(temp);Serial.print("\t");
+    Serial.println(crank_angle);
+  }*/
   lastTooth = time;
-   toothTime = (int)((float)0.9*toothTime + (float)0.1*temp);  
+  //toothTime = temp; 
+  
+  // Under heavy acceleration, the tooth width will change drastically
+  // To avoid trying to average this out (which we don't want)
+  // We ignore large changes, and simply reset the average value.
+  // This also helps in the initial sitution where toothTime is very large.
+  // The size of this factor depends on how much the engine can accerlate over 1 tooth
+  if(abs(temp-toothTime) < MAX_TOOTH_CHANGE){
+    toothTime = (float)0.9*toothTime + (float)0.1*temp; 
+  }else{
+    toothTime = temp; 
+  }
 }
 
 // Deal with turning the fuel on and off
@@ -505,20 +568,4 @@ ISR(TIMER3_COMPA_vect)          // timer compare interrupt service routine
    }
 }
 
-// Do a short pulse on the given pin
-// Can be used to show events as a pin output
-void outputMarker(unsigned pin){
-   digitalWrite(pin,LOW);
-   delayMicroseconds(10);
-   digitalWrite(pin,HIGH);
-   delayMicroseconds(100);
-   digitalWrite(pin,LOW); 
-   delayMicroseconds(10);
-}
 
-//  Calculate the number of timer counts required for the given time with the given prescaler
-//  Time is in nanoseconds.
-//  Returns the integer value to load into the timer counter register
-unsigned calcTime(unsigned long time, unsigned prescaler){
-  return (int)(time/(prescaler >> 4));
-}

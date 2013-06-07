@@ -79,3 +79,21 @@ unsigned fuelMap[2][MAP_TPS][MAP_SPD] = {{
     }
     Serial.print("\n"); 
  }
+ 
+ // Do a short pulse on the given pin
+// Can be used to show events as a pin output
+void outputMarker(unsigned pin){
+   digitalWrite(pin,LOW);
+   delayMicroseconds(10);
+   digitalWrite(pin,HIGH);
+   delayMicroseconds(200);
+   digitalWrite(pin,LOW); 
+   delayMicroseconds(10);
+}
+
+//  Calculate the number of timer counts required for the given time with the given prescaler
+//  Time is in nanoseconds.
+//  Returns the integer value to load into the timer counter register
+unsigned calcTime(unsigned long time, unsigned prescaler){
+  return (int)(time/(prescaler >> 4));
+}

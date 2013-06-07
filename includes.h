@@ -7,6 +7,10 @@
 
 #define TOOTH_OFFSET 240  // How many degrees after missing tooth is TDC
 #define MIN_SPEED 100     // Minimum engine speed before fuel and ignition are enabled
+
+ // Maximum amount that a missing tooth width can change under heavy acceleration
+ // Needs to be big enough so that the low pass filter actually works
+#define MAX_TOOTH_CHANGE 20
 #define TOOTH_PIN 2       // The missing tooth pulse input
 #define FUEL_PIN 12       // The fuel injector control pin
 #define IGN_PIN 13        // the pin that the ignition coild is attached to
@@ -26,6 +30,8 @@ extern unsigned fuelMap[2][MAP_TPS][MAP_SPD];
 void mapReset( char );
 void mapOutput( char );
 void mapDisplay( char );
+void outputMarker(unsigned );
+unsigned calcTime(unsigned long , unsigned );
 
 #endif
 #endif
