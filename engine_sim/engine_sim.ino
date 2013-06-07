@@ -59,20 +59,21 @@ void setup()
   Serial.println("Init");
   Serial.println(RPM);
   
-  //attachInterrupt(PUSH1, button1Push, CHANGE); // Button 1 is broken...
-  //attachInterrupt(PUSH2, button2Push, CHANGE);
+  attachInterrupt(PUSH1, button1Push, CHANGE); // Button 1 is broken...
+  attachInterrupt(PUSH2, button2Push, CHANGE);
   
   attachInterrupt(FUEL_PIN, fuelChange, CHANGE);
   attachInterrupt(IGN_PIN, ignChange, FALLING);
   
   engine.throttle = 1;
-  setTimer(2896);
+  setTimer(210*30);
 }
  
 void loop()
 {
-    digitalWrite(RED_LED,LOW);
+   digitalWrite(RED_LED,LOW);
    delay(50);
+   
    engine.simulate(0.05);
    
    lambdaOut = 128*(engine.lambda);
@@ -150,6 +151,10 @@ void fuelChange(){
 
 void ignChange(){
   engine.ignition = TOOTH_OFFSET - (int)crank_angle;
+  //Serial.println(engine.ignition/10.0);
+  if(fired == true){
+    Serial.println("multi spark!"); 
+  }
   fired = true;
 }
 

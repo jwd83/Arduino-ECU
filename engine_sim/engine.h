@@ -15,6 +15,7 @@ class Engine{
    int ignition;                // degrees before TDC that ignition occurred
    Engine();
    int test(int in);
+   void reset();
    void simulate(float);
  private:
    float w;			// Angular speed in rads/s

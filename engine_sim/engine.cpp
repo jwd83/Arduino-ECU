@@ -29,6 +29,10 @@ int Engine::test(int in)
   return in*2;  
 }
 
+void Engine::reset(){
+ w = 0; 
+}
+
 void Engine::simulate(float dt){
   
   // Limit the fuelling between 0 and 100%
