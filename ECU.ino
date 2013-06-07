@@ -72,13 +72,15 @@ void setup() {
   TCCR3B |= (1 << WGM32);   // CTC mode
   TCCR3B |= (1 << CS31);    // Load prescaler
   TCCR3B |= (1 << CS30);    // Load prescaler
-  //TIMSK3 |= (1 << OCIE3A);  // enable timer compare interrupt
+  // Don't enable just yet though
   
   interrupts();             // enable all interrupts
 }
 
 void loop() {
   //delay(50);
+  
+  // Calculate the ignition timer value
   ignTimeVal = ignAngle *toothTime/12 - ignDuration;
 
   
@@ -407,9 +409,7 @@ void missingToothISR(){
 
   if(temp > ((unsigned)toothTime<<2) || crank_angle > 345){
     // Missing tooth detected
-    //outputMarker(IGN_PIN);
-    
-    //delayMicroseconds(50);
+
     
     // Sort out fuel timer
     if(fuelControl != "disabled" && RPM > MIN_SPEED){
@@ -426,97 +426,28 @@ void missingToothISR(){
     
     if(ignControl != "disabled" ){ //&& RPM > 500
       // Start the ignition delay timer
-      
       TIFR3 |= 1 << OCF3A;        // Write a 1 to the interrupt flag to clear it
       TCNT3 = 0;                  // Reset the timer count to 0
       TIMSK3 |= (1 << OCIE3A);    // enable timer compare interrupt
-      
-      //OCR3A = ignTime;            // Load the compare match register
-      
-      // Work out the timings for the fuel and ignition events based on the length of time the last tooth took
-      // 1 tooth is 3 degrees, so toothTime = 3 degrees worth of microseconds
-      // If the ignition pulse should finish 18 degrees before TDC then it has to start 18 degrees + duration of charge before TDC
-      // Convert 18 degrees into microseconds: (18/3)*toothTime
-      // Plus the time for charging: (18/3)*toothTime + ignDuration  = A
-      // Time after this missing tooth is TOOTH_OFFSET in microseconds minus A
-      // (TOOTH_OFFSET/3) * toothTime - ((18/3)*toothTime +ignDuration)
-      // (TOOTH_OFFSET/3) * toothTime -(18/3)*toothTime -ignDuration
-      // (TOOTH_OFFSET-18)*toothTime/3 - ignDuration
-      // This method requires careful prescaler choice since the timer is fully utilised at the RPM limits 64 seems to work ok
-      // The calculations also need to be cast to floats to avoid strange results
-      //OCR3A = calcTime(ignAngle*toothTime/3.0 ,64) - ignDuration;            // Load the compare match register
-      //OCR3A = (unsigned int)ignAngle * (toothTime/12) - ignDuration;            // Load the compare match register
-      //Serial.println(OCR3A);      //Serial.print("\t");
-      //Serial.println(OCR3A);
-      
     }
-    //Serial.print(time);Serial.print("\t");
-//    Serial.print(lastTooth);Serial.print("\t");
-    //Serial.print(ignDuration);Serial.print("\t");
-    //Serial.print(ignAngle*temp/12 - ignDuration);Serial.print("\t");
-    //Serial.print(temp);Serial.print("\t");
-    //Serial.println(crank_angle);
-    //Serial.println("\t");
 
     if(crank_angle <= 345){
       temp = temp/5.0;              // This is how long a tooth would have taken and allows for correct calculation of engine RPM
     }
-     
-    //Serial.print("MT");
-    //Serial.println(toothTime);
-    //Serial.println("");
     
     crank_angle = 0;            // Reset the crank angle
     
 
   }else{
-    /*
-    int startAng = ignAngle - (ignDuration<<2)/((float)toothTime/3);
-        
-    if(ignControl != "disabled" && RPM > MIN_SPEED && crank_angle >= startAng && crank_angle < (startAng + 3)){
-      //Serial.println(calcTime((crank_angle - startAng) * toothTime/3,64));
-      //digitalWrite(IGN_PIN,HIGH); // Start the coil charging
-      OCR3A = calcTime((crank_angle - startAng) * toothTime/3,64);
-      TIFR3 |= 1 << OCF3A;        // Write a 1 to the interrupt flag to clear it
-      TCNT3 = 0;                  // Reset the timer count to 0
-      TIMSK3 |= (1 << OCIE3A);    // enable timer compare interrupt
-      //OCR3A = (int)ignDuration - calcTime((crank_angle - startAng) * toothTime/3,64);
-      
-      //Serial.println(OCR3A);
-    }
-    */
-    /*
-    if(digitalRead(IGN_PIN) == LOW){
-      OCR3A += temp - toothTime;        // Make an adjustment to the time if the engine is accelerating
-    }
-    */
+
     if(digitalRead(IGN_PIN) == LOW && (OCR3A - TCNT3) > toothTime/4 && ignControl != "disabled"){
-      
-      
-      //OCR3A = ((int)((float)ignAngle*toothTime/3.0) >> 4) - ignDuration;
-      //Serial.print((OCR3A - TCNT3)); Serial.print("\t");
-      //Serial.print(toothTime); Serial.println("\t");
       OCR3A = ignTimeVal;            // Load the compare match register
-      //Serial.print(OCR3A); Serial.println("\t");
     }
     
     crank_angle+=3;
-    
-    
   }
   
-  //Serial.println(toothTime);
-  //Serial.print(toothTime);Serial.print("\t");
-  /*
-  if(temp>10000){
-    Serial.print(time);Serial.print("\t");
-    Serial.print(toothTime);Serial.print("\t");
-    Serial.print(lastTooth);Serial.print("\t");
-    Serial.print(temp);Serial.print("\t");
-    Serial.println(crank_angle);
-  }*/
   lastTooth = time;
-  //toothTime = temp; 
   
   // Under heavy acceleration, the tooth width will change drastically
   // To avoid trying to average this out (which we don't want)
