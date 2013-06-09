@@ -9,14 +9,14 @@ unsigned RPM = 0;                // The current engine RPM
 long testTimer = 0;
 
 // Lambda
-double lambda = 512;              // The value read from the lambda analog input pin 512 should be lambda = 1
+double lambda = 1;              // The value read from the lambda analog input pin 512 should be lambda = 1
 unsigned lambdaDeadband = 20;        // The deadback for lambda feedback, don't adjust the output within this region from lambda = 512
-double lambdaSetpoint = 512;
-String fuelControl = "disabled";  // Whether to use lambda feedback or the engine map
+double lambdaSetpoint = 1;
 
 // Fuel
 unsigned fuelTime = calcTime(1000,64);// The fuel pulse timing delay, default value at this timer's prescaler
 double fuelDuration = calcTime(4000,64); // The fuel pulse duration, default value at this timer's prescaler
+String fuelControl = "disabled";  // Whether to use lambda feedback or the engine map
 
 // Ignition  
 float ignAngle = TOOTH_OFFSET - 22; // The ignition delay angle before TDC
@@ -89,12 +89,12 @@ void loop() {
   *************************** FUEL CONTROL *********************************
   **************************************************************************/
   //lambda = (float)0.9*lambda + (float)analogRead(lambdaPin)*0.1; // low pass filter
-  lambda = analogRead(LAMBDA_PIN);  // no filter
-  //lambda = map(analogRead(lambdaPin),0,865,0,1023);    // Remap for max vals
+  lambda = analogRead(LAMBDA_PIN)/204.6;  // no filter
+  //lambda = map(analogRead(LAMBDA_PIN),0,1023.0,0,5.0);    // Remap for max vals
   if(fuelControl == "ONOFF" && millis()%50 >45){
-    if(lambda > 512 + lambdaDeadband && fuelDuration < 65534){
+    if(lambda > lambdaSetpoint + lambdaDeadband && fuelDuration < 65534){
        fuelDuration += 1; 
-    }else if(lambda < 512 - lambdaDeadband && fuelDuration > 1){
+    }else if(lambda < lambdaSetpoint - lambdaDeadband && fuelDuration > 1){
        fuelDuration -= 1; 
     }
   }else if(fuelControl == "PID"){ // Use the map if lambda is turned off
