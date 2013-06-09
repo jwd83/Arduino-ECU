@@ -81,7 +81,7 @@ void loop() {
   //delay(50);
   
   // Calculate the ignition timer value
-  ignTimeVal = ignAngle *toothTime/12 - ignDuration;
+  ignTimeVal = ignAngle *toothTime/12 - (ignDuration - (900 - toothTime));
 
   
   //Serial.print(toothTime);  Serial.print("\t");Serial.println(ignTimeVal);
@@ -407,9 +407,17 @@ void missingToothISR(){
   unsigned temp = time - lastTooth;
   
 
-  if(temp > ((unsigned)toothTime<<2) || crank_angle > 345){
+  if(crank_angle >= 345 && temp > ((unsigned)toothTime<<2) ){
     // Missing tooth detected
 
+    // Only enable the timer interrupts if it's safe and engine is ready
+    // e.g. there's no point in sparking if the engine is stopped!
+    if(ignControl != "disabled" && RPM > MIN_SPEED){
+      // Start the ignition delay timer
+      TIFR3 |= 1 << OCF3A;        // Write a 1 to the interrupt flag to clear it
+      TCNT3 = 0;                  // Reset the timer count to 0
+      TIMSK3 |= (1 << OCIE3A);    // enable timer compare interrupt
+    }
     
     // Sort out fuel timer
     if(fuelControl != "disabled" && RPM > MIN_SPEED){
@@ -424,12 +432,7 @@ void missingToothISR(){
       }
     }
     
-    if(ignControl != "disabled" ){ //&& RPM > 500
-      // Start the ignition delay timer
-      TIFR3 |= 1 << OCF3A;        // Write a 1 to the interrupt flag to clear it
-      TCNT3 = 0;                  // Reset the timer count to 0
-      TIMSK3 |= (1 << OCIE3A);    // enable timer compare interrupt
-    }
+    
 
     if(crank_angle <= 345){
       temp = temp/5.0;              // This is how long a tooth would have taken and allows for correct calculation of engine RPM
@@ -439,8 +442,9 @@ void missingToothISR(){
     
 
   }else{
-
-    if(digitalRead(IGN_PIN) == LOW && (OCR3A - TCNT3) > toothTime/4 && ignControl != "disabled"){
+    // Load up the timer if the ignition's not already on, and if it's
+    // Not already close to the timer elapsing
+    if(bitRead(PORTB,7) == LOW && ((OCR3A - TCNT3) << 2) > toothTime  ){
       OCR3A = ignTimeVal;            // Load the compare match register
     }
     
@@ -482,20 +486,24 @@ ISR(TIMER1_COMPA_vect)          // timer compare interrupt service routine
 ISR(TIMER3_COMPA_vect)          // timer compare interrupt service routine
 {
    
-   if(digitalRead(IGN_PIN) == LOW){
-     // If ignition off, then turn it on and set timer to turn it off again 
-     digitalWrite(IGN_PIN,HIGH);
-     TIFR3 |= 1 << OCF3A;        // Write a 1 to the interrupt flag to clear it
-     TCNT3 = 0;                  // Reset the timer count to 0
-     //Serial.println(ignDuration);
-     OCR3A = (int)ignDuration;        // Load the compare match register with the coil charge time
-     testTimer = micros();
-   }else{
+   if(digitalRead(IGN_PIN) == HIGH){
+   //if(bitRead(PORTB,7) == HIGH){
      //Serial.println(micros()- testTimer);
      
      // If ignition on, turn it off and disable timer until next missing tooth
      digitalWrite(IGN_PIN,LOW);
+//     bitWrite(PORTB,7,0);
      TIMSK3 &= ~(1 << OCIE3A);  // disable timer compare interrupt 
+     
+   }else{
+     // If ignition off, then turn it on and set timer to turn it off again 
+     digitalWrite(IGN_PIN,HIGH);
+     //bitWrite(PORTB,7,1);
+     TIFR3 |= 1 << OCF3A;        // Write a 1 to the interrupt flag to clear it
+     TCNT3 = 0;                  // Reset the timer count to 0
+     //Serial.println(ignDuration);
+     OCR3A = (int)ignDuration- (900 - toothTime);        // Load the compare match register with the coil charge time
+     testTimer = micros();
    }
 }
 
