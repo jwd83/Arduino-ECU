@@ -74,9 +74,14 @@ void loop()
    digitalWrite(RED_LED,LOW);
    delay(50);
    
+   // The value passed to simulate is the simulation timestep size in seconds
+   // For real time accurate simulation it should be the same length of real time
+   // between engine simulations calls, hence it is the same as the loop delay() value
    engine.simulate(0.05);
    
-   lambdaOut = 128*(engine.lambda);
+   lambdaOut = 51*(engine.lambda);
+   
+   //lambdaOut = map(engine.lambda, 0,5,0,255);
    
    if(lambdaOut > 255){
       lambdaOut = 255; 
@@ -98,6 +103,7 @@ void loop()
    Serial.print(fuelDelay);   Serial.print("\t");
    Serial.print(engine.F);   Serial.print("\t");
    Serial.print(engine.AFR);   Serial.print("\t");
+   Serial.print(engine.lambda);   Serial.print("\t");
    Serial.print(lambdaOut);   Serial.print("\t");
    Serial.println(engine.ignition/10.0);
    
