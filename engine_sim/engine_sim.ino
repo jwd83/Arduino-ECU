@@ -65,7 +65,7 @@ void setup()
   attachInterrupt(FUEL_PIN, fuelChange, CHANGE);
   attachInterrupt(IGN_PIN, ignChange, FALLING);
   
-  engine.throttle = 1;
+  engine.throttle = 100;
   setTimer(210*30);
 }
  
@@ -131,6 +131,10 @@ void serialEvent(){
     break;
     case 'e':
       analogWrite(LAMBDA_PIN,Serial.parseInt());
+    break;
+    case 's':
+      //Give the engine some initial speed similar to cranking it over
+      engine.crank(Serial.parseInt());
     break;
   }
   // Clear out anything left in the serial buffer (ignore it)

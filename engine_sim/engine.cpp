@@ -33,6 +33,10 @@ void Engine::reset(){
  w = 0; 
 }
 
+void Engine::crank(int w){
+ this->w = w; 
+}
+
 void Engine::simulate(float dt){
   
   // Limit the fuelling between 0 and 100%

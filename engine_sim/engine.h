@@ -17,6 +17,7 @@ class Engine{
    int test(int in);
    void reset();
    void simulate(float);
+   void crank(int);
  private:
    float w;			// Angular speed in rads/s
    
