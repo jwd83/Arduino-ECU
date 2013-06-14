@@ -10,13 +10,13 @@ long testTimer = 0;
 
 // Lambda
 double lambda = 1;              // The value read from the lambda analog input pin 512 should be lambda = 1
-unsigned lambdaDeadband = 20;        // The deadback for lambda feedback, don't adjust the output within this region from lambda = 512
-double lambdaSetpoint = 1;
+unsigned lambdaDeadband = 20;   // The deadback for lambda feedback, don't adjust the output within this region from lambda = 512
+double lambdaSetpoint = 250;    // 1.7 appears to be about stoichiometric
 
 // Fuel
 unsigned fuelTime = calcTime(1000,64);// The fuel pulse timing delay, default value at this timer's prescaler
 double fuelDuration = calcTime(4000,64); // The fuel pulse duration, default value at this timer's prescaler
-String fuelControl = "disabled";  // Whether to use lambda feedback or the engine map
+String fuelControl = "TRIM";  // Whether to use lambda feedback or the engine map
 
 // Ignition  
 float ignAngle = TOOTH_OFFSET - 22; // The ignition delay angle before TDC
@@ -25,18 +25,20 @@ String ignControl = "TRIM";
 unsigned ignTimeVal = 0;
 
 // For PID
-float kP = 0.1;
-float kI = 5.0;
+float kP = 1.0;
+float kI = 1.0;
 float kD = 0;
 
-PID lambdaPID(&lambda,&fuelDuration,&lambdaSetpoint,kP,kI,kD,DIRECT); // Settings for map with lambda
+PID lambdaPID(&lambda,&fuelDuration,&lambdaSetpoint,kP,kI,kD,REVERSE); // Settings for map with lambda
 void setup() {
   
   // initialize the crank sensor as a input:
   pinMode(TOOTH_PIN, INPUT);
+  pinMode(8, INPUT);
   // initialize the fuel as an output:
   pinMode(FUEL_PIN, OUTPUT);
-  
+  pinMode(IGN_PIN, OUTPUT);
+  pinMode(13, OUTPUT);
   // Turn the fuel off!
   digitalWrite(FUEL_PIN,LOW);
   
@@ -50,7 +52,7 @@ void setup() {
   
   // PID
   lambdaPID.SetMode(AUTOMATIC);
-  lambdaPID.SetOutputLimits(1, 65535);
+  lambdaPID.SetOutputLimits(MIN_FUEL,MAX_FUEL);
   
    // initialize timer1 
   noInterrupts();           // disable all interrupts
@@ -88,8 +90,8 @@ void loop() {
   /* **********************************************************************
   *************************** FUEL CONTROL *********************************
   **************************************************************************/
-  //lambda = (float)0.9*lambda + (float)analogRead(lambdaPin)*0.1; // low pass filter
-  lambda = analogRead(LAMBDA_PIN)/204.6;  // no filter
+  lambda = (float)0.999*lambda + (float)analogRead(LAMBDA_PIN)*0.001; // low pass filter
+  //lambda = analogRead(LAMBDA_PIN)/204.6;  // no filter
   //lambda = map(analogRead(LAMBDA_PIN),0,1023.0,0,5.0);    // Remap for max vals
   if(fuelControl == "ONOFF" && millis()%50 >45){
     if(lambda > lambdaSetpoint + lambdaDeadband && fuelDuration < 65534){
@@ -99,7 +101,9 @@ void loop() {
     }
   }else if(fuelControl == "PID"){ // Use the map if lambda is turned off
       // PID Library control
-      lambdaPID.Compute();
+      if(RPM > MIN_SPEED){
+        lambdaPID.Compute();
+      }
   }else if(fuelControl == "TRIM"){
     
     // Use the analog inputs to set the fuelling
@@ -150,6 +154,7 @@ void loop() {
   
   if(ignControl == "TRIM"){
     ignAngle = TOOTH_OFFSET - (13 + (float)analogRead(IGN_TRIM)/20);
+    //ignAngle = TOOTH_OFFSET - (float)analogRead(IGN_TRIM)/10;
   }else if(ignControl == "MAP"){
     ignAngle = TOOTH_OFFSET - fuelMap[1][round((float)analogRead(THROTTLE_PIN)/102.3)][round((float)RPM/500)];
   }
@@ -222,7 +227,7 @@ void serialEvent() {
               case 'p':
                 Serial.println("Fuel set to use PID feedback");
                 fuelControl = "PID";
-                lambdaPID.SetOutputLimits(1, 65535);
+                lambdaPID.SetOutputLimits(MIN_FUEL, MAX_FUEL);
               break;
               case 's':
                 Serial.print("Setpoint set to use: ");
@@ -416,13 +421,12 @@ void serialEvent() {
 
 void missingToothISR(){
   unsigned long time = micros();
-  unsigned temp = time - lastTooth;
+  unsigned long temp = time - lastTooth;
   
 
-  if(crank_angle >= 345 && temp > ((unsigned)toothTime<<2) ){
+  if(temp<5000 && temp > ((unsigned long)toothTime<<1) && crank_angle >= 345 ){
     // Missing tooth detected
-
-    // Only enable the timer interrupts if it's safe and engine is ready
+    // Only enable the timer1 interrupts if it's safe and engine is ready
     // e.g. there's no point in sparking if the engine is stopped!
     if(ignControl != "disabled" && RPM > MIN_SPEED){
       // Start the ignition delay timer
@@ -432,7 +436,8 @@ void missingToothISR(){
     }
     
     // Sort out fuel timer
-    if(fuelControl != "disabled" && RPM > MIN_SPEED){
+    // Don't bother turning the fuel on if it's not got any time to be on for.
+    if(fuelControl != "disabled" && (int)fuelDuration > 10 && RPM > MIN_SPEED ){
       TIFR1 |= 1 << OCF1A;        // Write a 1 to the interrupt flag to clear it
       TCNT1 = 0;                  // Reset the timer count to 0
       TIMSK1 |= (1 << OCIE1A);    // enable timer compare interrupt
@@ -440,8 +445,10 @@ void missingToothISR(){
         OCR1A = fuelTime;           // Load the compare match register
       }else{
         digitalWrite(FUEL_PIN,HIGH);
-        OCR1A = fuelDuration; 
+        OCR1A = (int)fuelDuration; 
       }
+    }else{
+      digitalWrite(FUEL_PIN,LOW);
     }
     
     
@@ -456,7 +463,9 @@ void missingToothISR(){
   }else{
     // Load up the timer if the ignition's not already on, and if it's
     // Not already close to the timer elapsing
-    if(bitRead(PORTB,7) == LOW && ((OCR3A - TCNT3) << 2) > toothTime  ){
+    // bitRead(PORTB,7)
+    // digitalRead(IGN_PIN)
+    if(bitRead(PORTB,5) ==  LOW && ((OCR3A - TCNT3) << 2) > toothTime  ){
       OCR3A = ignTimeVal;            // Load the compare match register
     }
     
