@@ -4,8 +4,10 @@
 
 #define MAP_SPD 13        // Size of speed dimension of map
 #define MAP_TPS 11        // Size of throttle position dimension of map
+#define MAP_TPS_DIV 1
+#define MAP_SPD_DIV 500
 
-#define TOOTH_OFFSET 360  // How many degrees after missing tooth is TDC
+#define TOOTH_OFFSET 120  // How many degrees after missing tooth is TDC
 #define MIN_SPEED 200     // Minimum engine speed before fuel and ignition are enabled
 
  // Maximum amount that a missing tooth width can change under heavy acceleration
@@ -20,8 +22,8 @@
 #define FUEL_TRIM 2       // Fuel trim potentiometer analog input
 #define IGN_TRIM 3        // Ignition trim potentiometer analog input
 
-#define MIN_FUEL 128
-#define MAX_FUEL 2000
+#define MIN_FUEL 350
+#define MAX_FUEL 650
 // Maps
 // The engine maps store values for open loop operation
 // The first dimension in the array are the engine load/throttle position in multiples of 10 between 0 and 100

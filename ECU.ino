@@ -11,7 +11,7 @@ long testTimer = 0;
 // Lambda
 double lambda = 1;              // The value read from the lambda analog input pin 512 should be lambda = 1
 unsigned lambdaDeadband = 20;   // The deadback for lambda feedback, don't adjust the output within this region from lambda = 512
-double lambdaSetpoint = 250;    // 1.7 appears to be about stoichiometric
+double lambdaSetpoint = 230;    // 1.7 appears to be about stoichiometric
 
 // Fuel
 unsigned fuelTime = calcTime(1000,64);// The fuel pulse timing delay, default value at this timer's prescaler
@@ -21,13 +21,13 @@ String fuelControl = "TRIM";  // Whether to use lambda feedback or the engine ma
 // Ignition  
 float ignAngle = TOOTH_OFFSET - 22; // The ignition delay angle before TDC
 unsigned ignDuration = calcTime(8000,64); // The time that the ignition coil charges for
-String ignControl = "TRIM";
+String ignControl = "disabled";
 unsigned ignTimeVal = 0;
 
 // For PID
-float kP = 1.0;
-float kI = 1.0;
-float kD = 0;
+float kP = 0.8;
+float kI = 2.0;
+float kD = 1;
 
 PID lambdaPID(&lambda,&fuelDuration,&lambdaSetpoint,kP,kI,kD,REVERSE); // Settings for map with lambda
 void setup() {
@@ -53,6 +53,7 @@ void setup() {
   // PID
   lambdaPID.SetMode(AUTOMATIC);
   lambdaPID.SetOutputLimits(MIN_FUEL,MAX_FUEL);
+  lambdaPID.SetSampleTime(100);
   
    // initialize timer1 
   noInterrupts();           // disable all interrupts
@@ -112,32 +113,34 @@ void loop() {
   }else if(fuelControl == "MAP"){
     
     // Read the fuel value out of the map
-    //fuelDuration = calcTime(fuelMap[0][round((float)analogRead(THROTTLE_PIN)/102.3)][round((float)RPM/500)],64);
-    unsigned time = calcTime(fuelMap[0][round((float)analogRead(THROTTLE_PIN)/102.3)][round((float)RPM/500)],64);
+    //fuelDuration = calcTime(fuelMap[0][round((float)analogRead(THROTTLE_PIN)/102.3)][round((float)RPM/MAP_SPD_DIV)],64);
+    unsigned time = calcTime(fuelMap[0][readThrottle()][round((float)RPM/MAP_SPD_DIV)],64);
     //Serial.print(time-lambdaDeadband);Serial.print("\t");Serial.println(time+lambdaDeadband);
-    lambdaPID.SetOutputLimits(time-lambdaDeadband, time+lambdaDeadband);
-    lambdaPID.Compute();
-    
+    //lambdaPID.SetOutputLimits(time-lambdaDeadband, time+lambdaDeadband);
+    //lambdaPID.Compute();
+    if(time != 0){
+      fuelDuration = time;
+    }
   }else if(fuelControl == "MAP_LAMBDA"){
     unsigned minVal,maxVal,tps,spd;
     // Use the fuel map to set the limits for the lambda control
-    tps = round((float)analogRead(THROTTLE_PIN)/102.3);
+    tps = readThrottle();
     if(tps >=0 ){
       tps--;
     }
     
-    spd = round((float)RPM/500);
+    spd = round((float)RPM/MAP_SPD_DIV);
     if(spd >=0){
       spd--;
     }
     
     minVal = calcTime(fuelMap[0][tps][spd],64);
-    tps = round((float)analogRead(THROTTLE_PIN)/102.3);
+    tps = readThrottle();
     if(tps < MAP_TPS -1){
       tps++;
     }
     
-    spd = round((float)RPM/500);
+    spd = round((float)RPM/MAP_SPD_DIV);
     if(spd < MAP_SPD -1){
       spd++;
     }
@@ -156,7 +159,7 @@ void loop() {
     ignAngle = TOOTH_OFFSET - (13 + (float)analogRead(IGN_TRIM)/20);
     //ignAngle = TOOTH_OFFSET - (float)analogRead(IGN_TRIM)/10;
   }else if(ignControl == "MAP"){
-    ignAngle = TOOTH_OFFSET - fuelMap[1][round((float)analogRead(THROTTLE_PIN)/102.3)][round((float)RPM/500)];
+    ignAngle = TOOTH_OFFSET - fuelMap[1][readThrottle()][round((float)RPM/MAP_SPD_DIV)];
   }
   
   /*************************************************************************
@@ -173,7 +176,9 @@ void loop() {
     Serial.print(lambda); Serial.print("\t"); 
     //Serial.print(OCR3A); Serial.print("\t"); 
     Serial.print(lambdaSetpoint); Serial.print("\t\t");
-    Serial.println(analogRead(THROTTLE_PIN)/10.23);
+    //Serial.println(analogRead(THROTTLE_PIN)/10.23);
+    Serial.println(readThrottle());
+    
     if(millis()%5000 >4995){
       Serial.print("Fuel control:"); Serial.println(fuelControl);
       Serial.print("RPM");  Serial.print("\t");
@@ -261,10 +266,10 @@ void serialEvent() {
             switch(Serial.read()){
               case 's':
                 Serial.println("Stored current values in map");
-                Serial.println(round((float)analogRead(THROTTLE_PIN)/102.3));
-                Serial.println(round((float)RPM/500));
+                Serial.println(readThrottle());
+                Serial.println(round((float)RPM/MAP_SPD_DIV));
                 Serial.println(fuelDuration*4);
-                fuelMap[0][round((float)analogRead(THROTTLE_PIN)/102.3)][round((float)RPM/500)] = fuelDuration*4;
+                fuelMap[0][readThrottle()][round((float)RPM/MAP_SPD_DIV)] = fuelDuration*4;
               break;
               case 'e':
               fuelControl = "MAP";
@@ -326,10 +331,10 @@ void serialEvent() {
           switch(Serial.read()){
             case 's':
               Serial.println("Stored current values in map");
-              Serial.println(round((float)analogRead(THROTTLE_PIN)/102.3));
-              Serial.println(round((float)RPM/500));
+              Serial.println(readThrottle());
+              Serial.println(round((float)RPM/MAP_SPD_DIV));
               Serial.println(ignAngle);
-              fuelMap[1][round((float)analogRead(THROTTLE_PIN)/102.3)][round((float)RPM/500)] = TOOTH_OFFSET + ignAngle;
+              fuelMap[1][readThrottle()][round((float)RPM/MAP_SPD_DIV)] = TOOTH_OFFSET + ignAngle;
             break;
             case 'e':
               ignControl = "MAP";
@@ -526,6 +531,12 @@ ISR(TIMER3_COMPA_vect)          // timer compare interrupt service routine
      OCR3A = (int)ignDuration- (900 - toothTime);        // Load the compare match register with the coil charge time
      testTimer = micros();
    }
+}
+
+int readThrottle(){
+  //return  round((float)map(analogRead(THROTTLE_PIN),12,83,0,100)/MAP_TPS_DIV);
+  return map(analogRead(THROTTLE_PIN),129,827,0,100); 
+  //return analogRead(THROTTLE_PIN);
 }
 
 
