@@ -97,7 +97,17 @@ void loop()
       engine.throttle = analogRead(THROTTLE_PIN)/40.95;
    }
    
-   
+   if(millis() % 100 < 5){
+     Serial.print("TPS");   Serial.print("\t");
+     Serial.print("SPD");   Serial.print("\t");
+     Serial.print("FDelay");   Serial.print("\t");
+     Serial.print("Fuel");   Serial.print("\t");
+     Serial.print("AFR");   Serial.print("\t");
+     Serial.print("Lambda");   Serial.print("\t");
+     Serial.print("LambdaOut");   Serial.print("\t");
+     Serial.println("Ignition"); 
+     
+   }
    Serial.print(engine.throttle);   Serial.print("\t");
    Serial.print(engine.s);   Serial.print("\t");
    Serial.print(fuelDelay);   Serial.print("\t");

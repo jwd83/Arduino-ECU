@@ -3,7 +3,7 @@
 
 Engine::Engine(){
   J	= 0.2;			// Moment of Inertia
-  k1	= 0.8;			// Combustion process/efficiency
+  k1	= 2.5;			// Combustion process/efficiency
   kf0 = 0.2;			// static coefficient of friction
   kf1 = 0.002;		// coefficient of friction
   kf2 = 0.0006;		// Squared coefficient of friction
@@ -47,9 +47,9 @@ void Engine::simulate(float dt){
     this->throttle = 0;
   }
   
-  if(this->s > 0 && this->throttle > 0){ // Checks for floating point calcs
-    this->AFR = (0.32666 * this->s * this->throttle)/(this->F);
-    this->lambda = 14.7/this->AFR;
+  if(this->s > 0 && this->throttle > 0 && this->F > 0){ // Checks for floating point calcs
+    this->AFR = (23814 + 0.004 * this->s * this->throttle)/(this->F);
+    this->lambda = (this->AFR) / 14.7;
   }else{
     this->AFR = 0.0;
     this->lambda = 0.0; 
