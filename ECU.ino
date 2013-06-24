@@ -14,14 +14,14 @@ unsigned lambdaDeadband = 20;   // The deadback for lambda feedback, don't adjus
 double lambdaSetpoint = 230;    // 1.7 appears to be about stoichiometric
 
 // Fuel
-unsigned fuelTime = calcTime(1000,FUEL_PRESCALE);// The fuel pulse timing delay, default value at this timer's prescaler
+unsigned fuelTime = 0;//calcTime(1000,FUEL_PRESCALE);// The fuel pulse timing delay, default value at this timer's prescaler
 double fuelDuration = calcTime(2000,FUEL_PRESCALE); // The fuel pulse duration, default value at this timer's prescaler
 String fuelControl = "PID";  // Whether to use lambda feedback or the engine map
 
 // Ignition  
 float ignAngle = TOOTH_OFFSET - 22; // The ignition delay angle before TDC
 unsigned ignDuration = calcTime(5000,IGN_PRESCALE); // The time that the ignition coil charges for
-String ignControl = "TRIM";
+String ignControl = "disabled";
 unsigned ignTimeVal = 0;
 
 // For PID
@@ -174,9 +174,9 @@ void loop() {
   **************************************************************************/
   RPM = 500000/toothTime;
   
-  if(millis()%500 >495){
+  if(millis()%50 >45){
     Serial.print(RPM);Serial.print("\t");
-    Serial.print(fuelDuration*4); Serial.print("\t\t");
+    Serial.print(OCR1A*4); Serial.print("\t\t");
     Serial.print(fuelTime*4); Serial.print("\t\t");
     Serial.print(ignDuration*4); Serial.print("\t\t");
     Serial.print(TOOTH_OFFSET - ignAngle); Serial.print("\t\t");
@@ -185,6 +185,9 @@ void loop() {
     Serial.print(lambdaSetpoint); Serial.print("\t\t");
     //Serial.println(analogRead(THROTTLE_PIN)/10.23);
     Serial.println(readThrottle());
+    if(lambda < 25){
+       Serial.println("Lambda Sensor Error!");
+    }
     
     if(millis()%5000 >4995){
       Serial.print("Fuel control:"); Serial.println(fuelControl);
@@ -459,14 +462,9 @@ void missingToothISR(){
       }else{
         digitalWrite(FUEL_PIN,HIGH);
         
-        // Special conditions for cranking, use preset fuelling amounts
-        if(RPM < 1000){
-          OCR1A = 600;    // 2400 us
-        }else if(RPM < 1500){
-          OCR1A = 450;    // 1800 us
-        }else{
-          OCR1A = (int)fuelDuration; 
-        }
+        // Special conditions for cranking, use preset fuelling amount
+        OCR1A = (int)fuelDuration; 
+        
       }
     }else{
       digitalWrite(FUEL_PIN,LOW);

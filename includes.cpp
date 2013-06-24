@@ -125,10 +125,10 @@ unsigned fuelMap[2][MAP_TPS][MAP_SPD] = {{
     for(char spd = -1; spd < MAP_SPD; spd++){
       for(char tps = -1; tps < MAP_TPS; tps++){
           if(spd == -1){
-            Serial.print(tps*10);Serial.print("\t"); 
+            Serial.print(tps*MAP_TPS_DIV);Serial.print("\t"); 
           }else{
            if(tps == -1){
-             Serial.print(spd*500);
+             Serial.print(spd*MAP_SPD_DIV);
            }else{
              Serial.print(fuelMap[dim][tps][spd]);
            }
