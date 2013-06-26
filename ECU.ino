@@ -6,7 +6,8 @@ unsigned long lastTooth = 0;          // Point in time that the last tooth occur
 float toothTime = 32000;          // The time between teeth
 unsigned crank_angle;            // The current crank angle
 unsigned RPM = 0;                // The current engine RPM
-long testTimer = 0;
+unsigned long startTime;         // Used to store the time at which the missing tooth occurred
+unsigned long temp;              // Temp var used in missing tooth, declared here for speed
 
 // Lambda
 double lambda = 1;              // The value read from the lambda analog input pin 512 should be lambda = 1
@@ -22,12 +23,15 @@ String fuelControl = "PID";  // Whether to use lambda feedback or the engine map
 float ignAngle = TOOTH_OFFSET - 22; // The ignition delay angle before TDC
 unsigned ignDuration = calcTime(5000,IGN_PRESCALE); // The time that the ignition coil charges for
 String ignControl = "disabled";
-unsigned ignTimeVal = 0;
+volatile unsigned ignTimeVal = 0;
 
 // For PID
 float kP = 0.8;
 float kI = 2.0;
 float kD = 1;
+
+// State vars
+boolean verbose = true;
 
 PID lambdaPID(&lambda,&fuelDuration,&lambdaSetpoint,kP,kI,kD,REVERSE); // Settings for map with lambda
 void setup() {
@@ -84,8 +88,20 @@ void loop() {
   //delay(50);
   
   // Calculate the ignition timer value
-  ignTimeVal = ignAngle *toothTime/12 - (ignDuration - (900 - toothTime));
-
+  // I believe there could be a problem with interrupts occurring during this calculation
+  // So to fix this, load all the variables that can be changed in interrupts into temp vars
+  // Do the calculations, and then finally move the result into the ignTimeVal
+  // Doesn't seem to help though...
+  cli();
+  float toothTime_T = toothTime;
+  sei();
+  
+  unsigned ingTimeVal_T = ignAngle *toothTime_T/12 - (ignDuration - (900 - toothTime_T));
+  RPM = RPM*0.9 + 0.1*(500000/toothTime_T);
+  
+  cli();
+  ignTimeVal = ingTimeVal_T;
+  sei();
   
   //Serial.print(toothTime);  Serial.print("\t");Serial.println(ignTimeVal);
   /* **********************************************************************
@@ -108,7 +124,7 @@ void loop() {
   }else if(fuelControl == "TRIM"){
     
     // Use the analog inputs to set the fuelling
-    fuelDuration = analogRead(FUEL_TRIM)*4;
+    fuelDuration = analogRead(FUEL_TRIM);
     
   }else if(fuelControl == "MAP"){
     
@@ -172,9 +188,8 @@ void loop() {
   /*************************************************************************
   *************************** SERIAL OUTPUT ********************************
   **************************************************************************/
-  RPM = 500000/toothTime;
   
-  if(millis()%50 >45){
+  if(verbose && millis()%50 >45){
     Serial.print(RPM);Serial.print("\t");
     Serial.print(OCR1A*4); Serial.print("\t\t");
     Serial.print(fuelTime*4); Serial.print("\t\t");
@@ -209,6 +224,9 @@ void serialEvent() {
   char temp = Serial.read();
   //char next;
   switch(temp){
+    case 'v':
+      verbose = !verbose;
+    break;
     case 'f':
       switch(Serial.read()){
           case 'x':
@@ -217,13 +235,13 @@ void serialEvent() {
           break;
           case 'w':
             Serial.print("Set Fuel");
-            fuelDuration = calcTime(Serial.parseInt(),FUEL_PRESCALE);
+            fuelDuration = Serial.parseInt()/4;
             Serial.println("Fuel feedback set to manual control");
             // Turn lambda feedback off, and use the map instead
             fuelControl = "manual"; 
           break;
           case 'd':
-            fuelTime = calcTime(Serial.parseInt(),FUEL_PRESCALE);
+            fuelTime = Serial.parseInt()/4;
             Serial.print("Fuel delay now set to: ");
             Serial.println(fuelTime);
           break;
@@ -436,8 +454,8 @@ void serialEvent() {
 }
 
 void missingToothISR(){
-  unsigned long time = micros();
-  unsigned long temp = time - lastTooth;
+  startTime = micros();
+  temp = startTime - lastTooth;
   
 
   if(temp<5000 && temp > ((unsigned long)toothTime<<1) && crank_angle >= 345 ){
@@ -460,14 +478,16 @@ void missingToothISR(){
       if(fuelTime > 0){
         OCR1A = fuelTime;           // Load the compare match register
       }else{
-        digitalWrite(FUEL_PIN,HIGH);
+        bitSet(PORTB,6);
+//        digitalWrite(FUEL_PIN,HIGH);
         
         // Special conditions for cranking, use preset fuelling amount
         OCR1A = (int)fuelDuration; 
         
       }
     }else{
-      digitalWrite(FUEL_PIN,LOW);
+      bitClear(PORTB,6);
+      //digitalWrite(FUEL_PIN,LOW);
     }
     
     
@@ -477,8 +497,6 @@ void missingToothISR(){
     }
     
     crank_angle = 0;            // Reset the crank angle
-    
-
   }else{
     // Load up the timer if the ignition's not already on, and if it's
     // Not already close to the timer elapsing
@@ -486,12 +504,13 @@ void missingToothISR(){
     // digitalRead(IGN_PIN)
     if(bitRead(PORTB,5) ==  LOW && ((OCR3A - TCNT3) << 2) > toothTime  ){
       OCR3A = ignTimeVal;            // Load the compare match register
+      //OCR3A = ignAngle *toothTime/12 - (ignDuration - (900 - toothTime));
     }
     
     crank_angle+=3;
   }
   
-  lastTooth = time;
+  lastTooth = startTime;
   
   // Under heavy acceleration, the tooth width will change drastically
   // To avoid trying to average this out (which we don't want)
@@ -503,21 +522,25 @@ void missingToothISR(){
   }else{
     toothTime = temp; 
   }
+  
 }
 
 // Deal with turning the fuel on and off
 ISR(TIMER1_COMPA_vect)          // timer compare interrupt service routine
 {
-   if(digitalRead(FUEL_PIN) == LOW){
+   //if(digitalRead(FUEL_PIN) == LOW){
+   if(bitRead(PORTB,6) == LOW){    // Speedier method of digitalRead
      // If fuel is off, then turn it on and set timer to turn it off
-     digitalWrite(FUEL_PIN,HIGH);
+//     digitalWrite(FUEL_PIN,HIGH);
+     bitSet(PORTB,6);
      TIFR1 |= 1 << OCF1A;        // Write a 1 to the interrupt flag to clear it
      TCNT1 = 0;                  // Reset the timer count to 0
      OCR1A = (int)fuelDuration;        // Load the compare match register with the coil charge time
      
    }else{
      // If fuel was on, then turn it off
-     digitalWrite(FUEL_PIN,LOW);
+     //digitalWrite(FUEL_PIN,LOW);
+     bitClear(PORTB,6);
      TIMSK1 &= ~(1 << OCIE1A);  // disable timer compare interrupt
    }
 }
@@ -526,24 +549,22 @@ ISR(TIMER1_COMPA_vect)          // timer compare interrupt service routine
 ISR(TIMER3_COMPA_vect)          // timer compare interrupt service routine
 {
    
-   if(digitalRead(IGN_PIN) == HIGH){
-   //if(bitRead(PORTB,7) == HIGH){
-     //Serial.println(micros()- testTimer);
+   //if(digitalRead(IGN_PIN) == HIGH){
+   if(bitRead(PORTB,5) == HIGH){
      
      // If ignition on, turn it off and disable timer until next missing tooth
-     digitalWrite(IGN_PIN,LOW);
-//     bitWrite(PORTB,7,0);
+     //digitalWrite(IGN_PIN,LOW);
+     bitClear(PORTB,5);
      TIMSK3 &= ~(1 << OCIE3A);  // disable timer compare interrupt 
      
    }else{
      // If ignition off, then turn it on and set timer to turn it off again 
-     digitalWrite(IGN_PIN,HIGH);
-     //bitWrite(PORTB,7,1);
+     //digitalWrite(IGN_PIN,HIGH);
+     bitSet(PORTB,5);
      TIFR3 |= 1 << OCF3A;        // Write a 1 to the interrupt flag to clear it
      TCNT3 = 0;                  // Reset the timer count to 0
      //Serial.println(ignDuration);
      OCR3A = (int)ignDuration- (900 - toothTime);        // Load the compare match register with the coil charge time
-     testTimer = micros();
    }
 }
 

@@ -2,7 +2,7 @@
 #define Includes_h
 #ifdef __cplusplus
 
-#define TOOTH_OFFSET 120  // How many degrees after missing tooth is TDC
+#define TOOTH_OFFSET 240  // How many degrees after missing tooth is TDC
 #define MIN_SPEED 200     // Minimum engine speed before fuel and ignition are enabled
 
 // MAPS
@@ -19,8 +19,9 @@
 // PIN DEFINES
     // OUTPUTS
 #define TOOTH_PIN 2       // The missing tooth pulse input
-#define FUEL_PIN 12       // The fuel injector control pin
+#define FUEL_PIN 12       // The fuel injector control pin //PB 6
 #define IGN_PIN 11        // the pin that the ignition coild is attached to
+
     // INPUTS
 #define THROTTLE_PIN 0    // Throttle position sensor analog input
 #define LAMBDA_PIN 1      // Lambda sensor analog input pin
@@ -29,7 +30,7 @@
 
 // Timer prescale values
 #define IGN_PRESCALE 64
-#define FUEL_PRESCALE 64
+#define FUEL_PRESCALE 8
 
 #define MIN_FUEL 350
 #define MAX_FUEL 650
