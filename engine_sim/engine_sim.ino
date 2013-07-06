@@ -13,6 +13,10 @@
 
 #define LAMBDA_PIN PB_4
 
+#define CDM PA_3
+#define TRIGGER PA_2
+#define PRESSURE PA_4
+
 unsigned crank_angle;
 int RPM;
 long crankTimer;
@@ -21,6 +25,7 @@ int fuelDuration;
 int fuelDelay;
 boolean toothFlag = false;
 boolean fired = false;
+boolean stroke = 0;
 
 boolean analogThrottle = true;
 
@@ -45,6 +50,10 @@ void setup()
   pinMode(IGN_PIN,INPUT);
   
   pinMode(LAMBDA_PIN,OUTPUT);
+  
+  pinMode(CDM,OUTPUT);
+  pinMode(TRIGGER,OUTPUT);
+  pinMode(PRESSURE,OUTPUT);
   
   RPM = 100;
   crank_angle = 0;
@@ -204,6 +213,19 @@ void outputMarker(unsigned pin){
 
 extern "C" {
   void scott(){
+    // Crank degree marker
+    if(crank_angle%5 == 0){
+      digitalWrite(CDM,!digitalRead(CDM)); 
+    }
+    
+    // Output pressure wave
+    if(stroke == 1 && crank_angle > 1000 && crank_angle < 2600){
+      digitalWrite(PRESSURE,HIGH); 
+    }else{
+      digitalWrite(PRESSURE,LOW); 
+    }
+    
+    // Missing tooth wheel (60/2) normal tooth
     if(crank_angle < 3450 && crank_angle%30 == 0){
       //digitalWrite(RED_LED,0);
       if(toothFlag){
@@ -217,17 +239,24 @@ extern "C" {
       digitalWrite(TOOTH_PIN,0);
      // digitalWrite(RED_LED,1);
     }
+    
     crank_angle += 1;
+    
+    // Missing tooth and TRIGGER marker
     if(crank_angle >= 3600){
+      digitalWrite(TRIGGER,HIGH);
       //Serial.println(toothFlag);
       toothFlag = 0;
       crank_angle = 0;
       if(fired == false){
-        Serial.println("Missfire! ");
+        //Serial.println("Missfire! ");
       };
-      outputMarker(BLUE_LED);
+      
       fired = false;
       fuelTimer = micros();
+      digitalWrite(TRIGGER,LOW);
+      
+      stroke = !stroke;    // Swap 4 cycle stroke
     }
     
   }
