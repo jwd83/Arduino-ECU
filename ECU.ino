@@ -458,10 +458,11 @@ void missingToothISR(){
   temp = startTime - lastTooth;
   
 
-  if(temp<5000 && temp > ((unsigned long)toothTime<<1) && crank_angle >= 345 ){
+  if(temp<5000 && temp > ((unsigned long)toothTime*1.5) && crank_angle >= 345 ){
     // Missing tooth detected
     // Only enable the timer1 interrupts if it's safe and engine is ready
     // e.g. there's no point in sparking if the engine is stopped!
+    bitClear(PORTB,5); // Turn the ignition off in case it's on
     if(ignControl != "disabled" && RPM > MIN_SPEED){
       // Start the ignition delay timer
       TIFR3 |= 1 << OCF3A;        // Write a 1 to the interrupt flag to clear it
