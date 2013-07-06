@@ -30,10 +30,10 @@
 
 // Timer prescale values
 #define IGN_PRESCALE 64
-#define FUEL_PRESCALE 8
+#define FUEL_MULT 2
 
-#define MIN_FUEL 350
-#define MAX_FUEL 650
+#define MIN_FUEL 1300
+#define MAX_FUEL 2500
 
 // Maps
 // The engine maps store values for open loop operation

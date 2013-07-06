@@ -12,23 +12,23 @@ unsigned long temp;              // Temp var used in missing tooth, declared her
 // Lambda
 double lambda = 1;              // The value read from the lambda analog input pin 512 should be lambda = 1
 unsigned lambdaDeadband = 20;   // The deadback for lambda feedback, don't adjust the output within this region from lambda = 512
-double lambdaSetpoint = 230;    // 1.7 appears to be about stoichiometric
+double lambdaSetpoint = 220;    // 1.7 appears to be about stoichiometric
 
 // Fuel
-unsigned fuelTime = 0;//calcTime(1000,FUEL_PRESCALE);// The fuel pulse timing delay, default value at this timer's prescaler
-double fuelDuration = calcTime(2000,FUEL_PRESCALE); // The fuel pulse duration, default value at this timer's prescaler
+unsigned fuelTime = 0*FUEL_MULT;//calcTime(1000,FUEL_PRESCALE);// The fuel pulse timing delay, default value at this timer's prescaler
+double fuelDuration = 2000*FUEL_MULT; // The fuel pulse duration, default value at this timer's prescaler
 String fuelControl = "PID";  // Whether to use lambda feedback or the engine map
 
 // Ignition  
 float ignAngle = TOOTH_OFFSET - 22; // The ignition delay angle before TDC
 unsigned ignDuration = calcTime(5000,IGN_PRESCALE); // The time that the ignition coil charges for
-String ignControl = "disabled";
+String ignControl = "TRIM";
 volatile unsigned ignTimeVal = 0;
 
 // For PID
-float kP = 0.8;
-float kI = 2.0;
-float kD = 1;
+float kP = 20;
+float kI = 0.8;
+float kD = 0;
 
 // State vars
 boolean verbose = true;
@@ -56,7 +56,7 @@ void setup() {
   
   // PID
   lambdaPID.SetMode(AUTOMATIC);
-  lambdaPID.SetOutputLimits(MIN_FUEL,MAX_FUEL);
+  lambdaPID.SetOutputLimits(MIN_FUEL*FUEL_MULT,MAX_FUEL*FUEL_MULT);
   lambdaPID.SetSampleTime(100);
   
    // initialize timer1 - FUEL
@@ -69,7 +69,7 @@ void setup() {
   OCR1A = fuelTime; // compare match register 16MHz/256/2Hz
   TCCR1B |= (1 << WGM12);   // CTC mode
   TCCR1B |= (1 << CS11);    // Load prescaler
-  TCCR1B |= (1 << CS10);    // Load prescaler
+  //TCCR1B |= (1 << CS10);    // Load prescaler
   
   // initialise timer2 - IGNITION
   TCCR3A = 0;               // Control register for waveform generation (off
@@ -124,7 +124,7 @@ void loop() {
   }else if(fuelControl == "TRIM"){
     
     // Use the analog inputs to set the fuelling
-    fuelDuration = analogRead(FUEL_TRIM);
+    fuelDuration = analogRead(FUEL_TRIM)*4;
     
   }else if(fuelControl == "MAP"){
     
@@ -134,7 +134,7 @@ void loop() {
     char spd = round((float)RPM/MAP_SPD_DIV);
     // Check the throttle and speed are actually in the map
     if(tps > 0 && tps < MAP_TPS && spd > 0 && spd < MAP_SPD){
-      unsigned time = calcTime(fuelMap[0][tps][spd],FUEL_PRESCALE);
+      unsigned time = fuelMap[0][tps][spd]*FUEL_MULT;
       //Serial.print(time-lambdaDeadband);Serial.print("\t");Serial.println(time+lambdaDeadband);
       
       if(time != 0){
@@ -157,7 +157,7 @@ void loop() {
       spd--;
     }
     
-    minVal = calcTime(fuelMap[0][tps][spd],FUEL_PRESCALE);
+    minVal = fuelMap[0][tps][spd]*FUEL_MULT;
     tps = readThrottle();
     if(tps < MAP_TPS -1){
       tps++;
@@ -168,7 +168,7 @@ void loop() {
       spd++;
     }
     
-    maxVal = calcTime(fuelMap[0][tps][spd],FUEL_PRESCALE);
+    maxVal = fuelMap[0][tps][spd]*FUEL_MULT;
     //Serial.print(tps);Serial.print("\t");Serial.print(spd);Serial.print("\t");Serial.print(fuelMap[0][round((float)analogRead(THROTTLE_PIN)/102.3)-1][round((float)RPM/500)-1]);Serial.print("\t");Serial.println(fuelMap[0][tps][spd]);
     lambdaPID.SetOutputLimits(minVal, maxVal);
     lambdaPID.Compute();
@@ -191,8 +191,8 @@ void loop() {
   
   if(verbose && millis()%50 >45){
     Serial.print(RPM);Serial.print("\t");
-    Serial.print(OCR1A*4); Serial.print("\t\t");
-    Serial.print(fuelTime*4); Serial.print("\t\t");
+    Serial.print(OCR1A/2); Serial.print("\t\t");
+    Serial.print(fuelTime/2); Serial.print("\t\t");
     Serial.print(ignDuration*4); Serial.print("\t\t");
     Serial.print(TOOTH_OFFSET - ignAngle); Serial.print("\t\t");
     Serial.print(lambda); Serial.print("\t"); 
@@ -235,13 +235,13 @@ void serialEvent() {
           break;
           case 'w':
             Serial.print("Set Fuel");
-            fuelDuration = Serial.parseInt()/4;
+            fuelDuration = Serial.parseInt()*2;
             Serial.println("Fuel feedback set to manual control");
             // Turn lambda feedback off, and use the map instead
             fuelControl = "manual"; 
           break;
           case 'd':
-            fuelTime = Serial.parseInt()/4;
+            fuelTime = Serial.parseInt()*2;
             Serial.print("Fuel delay now set to: ");
             Serial.println(fuelTime);
           break;
@@ -261,7 +261,7 @@ void serialEvent() {
               case 'p':
                 Serial.println("Fuel set to use PID feedback");
                 fuelControl = "PID";
-                lambdaPID.SetOutputLimits(MIN_FUEL, MAX_FUEL);
+                lambdaPID.SetOutputLimits(MIN_FUEL*FUEL_MULT, MAX_FUEL*FUEL_MULT);
               break;
               case 's':
                 Serial.print("Setpoint set to use: ");
@@ -297,8 +297,8 @@ void serialEvent() {
                 Serial.println("Stored current values in map");
                 Serial.println(readThrottle());
                 Serial.println(round((float)RPM/MAP_SPD_DIV));
-                Serial.println(fuelDuration*4);
-                fuelMap[0][readThrottle()][round((float)RPM/MAP_SPD_DIV)] = fuelDuration*4;
+                Serial.println(fuelDuration/FUEL_MULT);
+                fuelMap[0][readThrottle()][round((float)RPM/MAP_SPD_DIV)] = fuelDuration/FUEL_MULT;
               break;
               case 'e':
               fuelControl = "MAP";

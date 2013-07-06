@@ -161,6 +161,6 @@ unsigned calcTime(unsigned long time, unsigned prescaler){
 // Calculate the adjusted throttle position, used to loop up throttle position in map
 int readThrottle(){
   //return  round((float)map(analogRead(THROTTLE_PIN),12,83,0,100)/MAP_TPS_DIV);
-  return map(analogRead(THROTTLE_PIN),129,827,0,100); 
+  return map(analogRead(THROTTLE_PIN),125,827,0,100); 
   //return analogRead(THROTTLE_PIN);
 }
